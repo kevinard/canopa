@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Try the working tree's shell, notifications and compositor in a nested Niri
+# Try the working tree's shell, notifications, Settings and compositor in a nested Niri
 # window, on a private session bus and runtime directory: nothing touches your
 # running session (whose shell, notification and wallpaper daemons keep their
 # sockets in your real runtime directory). It uses the built-in default
@@ -20,8 +20,8 @@ cd "$repo"
 
 if [[ "${1:-}" != "--no-build" ]]; then
     bash scripts/cargo.sh build --release \
-        -p canopa-shell -p canopa-notify -p canopa-session --bin canopa-shell \
-        --bin canopa-notify --bin canopa-wallpaper
+        -p canopa-shell -p canopa-notify -p canopa-session -p canopa-settings \
+        --bin canopa-shell --bin canopa-notify --bin canopa-wallpaper --bin canopa-settings
 fi
 niri="${CANOPA_NESTED_NIRI:-target/niri-fork/release/niri}"
 if [[ ! -x "$niri" ]]; then
@@ -105,6 +105,11 @@ export XDG_STATE_HOME="$work/state"
 export XDG_DATA_DIRS="${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export XDG_DATA_HOME="$work/data"
 unset NIRI_SOCKET
+# Settings pages open through D-Bus activation: start the fresh build, not the
+# installed one ($XDG_DATA_HOME's services take precedence on the session bus).
+mkdir -p "$work/data/dbus-1/services"
+printf '[D-BUS Service]\nName=org.canopa.Settings\nExec=%s\n' \
+    "$repo/target/release/canopa-settings" >"$work/data/dbus-1/services/org.canopa.Settings.service"
 
 # Key bindings spawn "canopa-shell" by name: put the fresh builds first.
 export PATH="$repo/target/release:$PATH"

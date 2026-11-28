@@ -79,7 +79,7 @@ trait AgentManager {
     fn unregister_agent(&self, path: &OwnedObjectPath) -> zbus::Result<()>;
 }
 
-pub(super) struct IwdAgentRegistration {
+pub(crate) struct IwdAgentRegistration {
     cleanup: cleanup::Cleanup,
     conn: zbus::Connection,
     path: OwnedObjectPath,
@@ -88,10 +88,12 @@ pub(super) struct IwdAgentRegistration {
 }
 
 impl IwdAgentRegistration {
-    pub(super) async fn register(
+    /// Answer `owner`'s passphrase request for `label` of type `kind` on
+    /// `station` with `credential`, until dropped.
+    pub(crate) async fn register(
         conn: &zbus::Connection,
         owner: &str,
-        request: &WifiConnectRequest,
+        credential: Option<String>,
         station: &OwnedObjectPath,
         label: &str,
         kind: &str,
@@ -108,7 +110,7 @@ impl IwdAgentRegistration {
             conn: conn.clone(),
             owner: owner.into(),
             path,
-            secret: Arc::new(Mutex::new(request.credential.clone())),
+            secret: Arc::new(Mutex::new(credential)),
         };
         conn.object_server()
             .at(

@@ -241,7 +241,7 @@ whether it is saved, how it is secured and its signal (**Saved · Secured · Sig
 name; both prompts have **Cancel**. It uses NetworkManager, or iwd when
 NetworkManager is absent. The system service keeps the credentials and decides who
 may change them. Enterprise (802.1X) networks are set up in Settings' **Network**
-page. `CANOPA_WIFI_PROVIDER_BACKEND=networkmanager|iwd|none` restricts the choice.
+page with NetworkManager, or with a provisioning file in `/var/lib/iwd` with iwd. `CANOPA_WIFI_PROVIDER_BACKEND=networkmanager|iwd|none` restricts the choice.
 
 ### Bluetooth
 

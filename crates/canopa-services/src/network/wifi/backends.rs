@@ -2,11 +2,13 @@ mod runtime_backend;
 use runtime_backend::verify_control;
 pub use runtime_backend::{RuntimeBackend, choose_backend};
 mod iwd_agent;
-use iwd_agent::IwdAgentRegistration;
+pub(crate) use iwd_agent::IwdAgentRegistration;
 // D-Bus Wi-Fi adapters. Wire methods follow the NetworkManager and iwd APIs;
 // all constructors accept an existing connection internally for isolated tests.
 use super::identity::{DeviceIdentity, NetworkIdentity, Observation, Targets};
 use super::*;
+pub(crate) use crate::network::iwd::ManagedObjects;
+use crate::network::iwd::{IwdNetworkProxy, IwdObjectManagerProxy, IwdStationProxy};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -974,7 +976,7 @@ impl IwdBackend {
                     kind: kind.clone(),
                 },
                 label,
-                signal_strength: normalize_iwd_signal(signal),
+                signal_strength: crate::network::iwd::strength(signal),
                 security: match kind.as_str() {
                     "open" => WifiSecurity::Open,
                     "psk" => WifiSecurity::Personal,
@@ -1091,7 +1093,7 @@ impl IwdBackend {
                 IwdAgentRegistration::register(
                     &self.conn,
                     &self.owner,
-                    &request,
+                    request.credential.clone(),
                     &station_path,
                     &name,
                     &kind,
@@ -1161,9 +1163,6 @@ impl IwdBackend {
         Ok(stations.into_iter().next().map(|(_, path)| path))
     }
 }
-
-pub(crate) type ManagedObjects =
-    HashMap<OwnedObjectPath, HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>>;
 
 #[zbus::proxy(
     interface = "org.freedesktop.NetworkManager",
@@ -1240,57 +1239,6 @@ trait NmAccessPoint {
 
     #[zbus(property)]
     fn rsn_flags(&self) -> zbus::Result<u32>;
-}
-
-#[zbus::proxy(
-    interface = "org.freedesktop.DBus.ObjectManager",
-    default_service = "net.connman.iwd",
-    default_path = "/"
-)]
-trait IwdObjectManager {
-    fn get_managed_objects(&self) -> zbus::Result<ManagedObjects>;
-}
-
-#[zbus::proxy(
-    interface = "net.connman.iwd.Station",
-    default_service = "net.connman.iwd"
-)]
-trait IwdStation {
-    fn connect_hidden_network(&self, ssid: &str) -> zbus::Result<()>;
-    #[zbus(property)]
-    fn state(&self) -> zbus::Result<String>;
-    #[zbus(property)]
-    fn scanning(&self) -> zbus::Result<bool>;
-    fn scan(&self) -> zbus::Result<()>;
-    fn get_ordered_networks(&self) -> zbus::Result<Vec<(OwnedObjectPath, i16)>>;
-
-    #[zbus(property)]
-    fn connected_network(&self) -> zbus::Result<OwnedObjectPath>;
-}
-
-#[zbus::proxy(
-    interface = "net.connman.iwd.Network",
-    default_service = "net.connman.iwd"
-)]
-trait IwdNetwork {
-    #[zbus(property, name = "Type")]
-    fn network_type(&self) -> zbus::Result<String>;
-    #[zbus(property)]
-    fn device(&self) -> zbus::Result<OwnedObjectPath>;
-    fn connect(&self) -> zbus::Result<()>;
-
-    #[zbus(property)]
-    fn name(&self) -> zbus::Result<String>;
-
-    #[zbus(property)]
-    fn connected(&self) -> zbus::Result<bool>;
-
-    #[zbus(property)]
-    fn known_network(&self) -> zbus::Result<OwnedObjectPath>;
-}
-
-fn normalize_iwd_signal(signal: i16) -> u8 {
-    ((i32::from(signal) + 10000).clamp(0, 10000) / 100) as u8
 }
 
 fn scan_error(error: zbus::Error) -> WifiBackendError {

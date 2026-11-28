@@ -5,6 +5,8 @@
 //!   status and iwd may supply control.
 //! - [`status`] observes connectivity and the connection label from that owner.
 //! - [`wifi`] scans and connects through NetworkManager or iwd.
+//! - [`iwd`] reads and changes iwd's devices, networks and saved networks for
+//!   a settings page; [`networkd`] reads systemd-networkd's links.
 //! - [`manager`] reads and changes NetworkManager's devices and saved
 //!   connections for a settings page; [`profiles`] builds new ones (Wi-Fi
 //!   with WPA-Enterprise, hotspots, WireGuard); [`secret_agent`] answers
@@ -25,7 +27,9 @@
 //! # Ok(()) }
 //! ```
 pub mod bundle;
+pub mod iwd;
 pub mod manager;
+pub mod networkd;
 pub mod profiles;
 pub mod secret_agent;
 pub mod status;

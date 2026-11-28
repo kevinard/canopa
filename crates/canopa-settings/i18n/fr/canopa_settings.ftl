@@ -452,7 +452,8 @@ settings-clock-updated = Format de l’horloge mis à jour.
 ## Network
 
 settings-cancel = Annuler
-settings-network-not-running = NetworkManager ne fonctionne pas.
+settings-network-not-running = Aucun service réseau ne fonctionne.
+settings-network-service = NetworkManager ou iwd
 settings-network-error-changed = La connexion a changé. Réessayez.
 settings-network-error-timed-out = NetworkManager n’a pas répondu à temps.
 settings-network-needs-password = Ce réseau nécessite un mot de passe.
@@ -502,6 +503,17 @@ settings-network-question-hint = Les Paramètres la transmettent à NetworkManag
 settings-network-no-wifi = Aucun appareil Wi-Fi.
 settings-network-wifi-hardware-off = Un interrupteur matériel ou la touche mode avion a désactivé le Wi-Fi.
 settings-network-none-found = Aucun réseau trouvé pour l’instant.
+settings-network-iwd-not-running = iwd ne fonctionne pas.
+settings-network-networkd-not-running = systemd-networkd ne fonctionne pas.
+settings-network-needs-manager = Nécessite NetworkManager.
+settings-network-needs-provisioning = Nécessite un fichier de configuration dans /var/lib/iwd
+settings-network-saved = Réseaux enregistrés
+settings-network-no-saved = Aucun réseau enregistré.
+settings-network-not-in-range = { $security } · hors de portée
+settings-network-forget-network = Oublier
+settings-network-connected = Connecté
+settings-network-address = Adresse
+settings-network-wired-networkd-hint = Les adresses et le DNS se règlent dans /etc/systemd/network.
 settings-network-ap-open = ouvert
 settings-network-ap-secured = sécurisé
 settings-network-ap-enterprise = entreprise

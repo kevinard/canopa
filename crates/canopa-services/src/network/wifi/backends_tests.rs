@@ -102,8 +102,8 @@ async fn cancellation_before_creation_reply_still_retires_daemon_resources() {
 
 #[test]
 fn radio_security_signal_and_secrets_are_not_misrepresented() {
-    assert_eq!(normalize_iwd_signal(-5500), 45);
-    assert_eq!(normalize_iwd_signal(i16::MIN), 0);
+    assert_eq!(crate::network::iwd::strength(-5500), 45);
+    assert_eq!(crate::network::iwd::strength(i16::MIN), 0);
     assert_eq!(nm_security(0x200, 1), WifiSecurity::Enterprise);
     assert_eq!(nm_security(0, 1), WifiSecurity::Enterprise);
     assert_eq!(nm_security(0, 0), WifiSecurity::Open);
@@ -251,7 +251,7 @@ async fn iwd_agent_revalidates_network_properties_device_and_owner_on_every_requ
     let registration = IwdAgentRegistration::register(
         &fixture.backend.conn,
         &fixture.backend.owner,
-        &request,
+        request.credential.clone(),
         &path(DEVICE),
         "Home",
         "psk",

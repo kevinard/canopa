@@ -1,9 +1,14 @@
-//! The Network page's service: NetworkManager's devices, nearby networks and
-//! saved connections, the changes the page asks for, and the secret agent
-//! that relays NetworkManager's questions to the page (ADR 0139).
+//! The Network page's service. With NetworkManager: its devices, nearby
+//! networks and saved connections, the changes the page asks for, and the
+//! secret agent that relays NetworkManager's questions to the page (ADR 0139).
+//! Without it: iwd's Wi-Fi and systemd-networkd's wired links, chosen by the
+//! same [`bundle`] as the Shell's Wi-Fi panel.
 use crate::live::{LiveAction, LiveService, ServiceError};
 use canopa_services::network::{
+    bundle::{self, Bundle},
+    iwd,
     manager::{self, AccessPoint, Change, Overview, Security, Target},
+    networkd,
     profiles::{self, WifiSecurity, WireGuard},
     secret_agent::{self, SecretField, SecretRequest},
 };
@@ -24,13 +29,53 @@ pub struct Question {
     pub retry: bool,
 }
 
-/// What the page shows.
+/// What the page shows, from whichever daemons manage the network.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NetworkState {
+pub enum NetworkState {
+    Manager(ManagerState),
+    Iwd(IwdState),
+}
+
+/// NetworkManager's part of the page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManagerState {
     pub overview: Overview,
     pub question: Option<Question>,
     /// The secret agent could not register; questions cannot be answered.
     pub agent: bool,
+}
+
+/// Without NetworkManager: iwd's Wi-Fi and networkd's links, each `None`
+/// while its daemon is not running.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IwdState {
+    pub wifi: Option<iwd::Overview>,
+    pub links: Option<Vec<networkd::Link>>,
+}
+
+impl NetworkState {
+    pub fn manager(&self) -> Option<&ManagerState> {
+        match self {
+            Self::Manager(state) => Some(state),
+            Self::Iwd(_) => None,
+        }
+    }
+}
+
+/// A change on an iwd system.
+#[derive(Clone, PartialEq, Eq)]
+pub enum IwdAction {
+    Powered(iwd::Device, bool),
+    /// A saved or open network needs no passphrase.
+    Connect(iwd::Network, Option<String>),
+    JoinHidden {
+        device: iwd::Device,
+        name: String,
+        passphrase: Option<String>,
+    },
+    Disconnect(iwd::Network),
+    Forget(iwd::KnownNetwork),
+    Autoconnect(iwd::KnownNetwork, bool),
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -60,6 +105,7 @@ pub enum NetworkAction {
     },
     Answer(HashMap<String, String>),
     Cancel,
+    Iwd(IwdAction),
 }
 
 impl std::fmt::Debug for NetworkAction {
@@ -91,6 +137,15 @@ impl LiveAction for NetworkAction {
             Self::AddWireGuard(_) | Self::Import(..) => "vpn-add".into(),
             Self::Hotspot { .. } => "hotspot".into(),
             Self::Answer(_) | Self::Cancel => "secret".into(),
+            Self::Iwd(action) => match action {
+                IwdAction::Powered(device, _) => format!("radio-{}", device.name),
+                IwdAction::Connect(network, _) | IwdAction::Disconnect(network) => {
+                    format!("wifi-{}", network.name)
+                }
+                IwdAction::JoinHidden { .. } => "wifi-join".into(),
+                IwdAction::Forget(known) => format!("known-{}", known.name),
+                IwdAction::Autoconnect(known, _) => format!("known-{}-autoconnect", known.name),
+            },
         }
     }
 }
@@ -198,15 +253,52 @@ impl NetworkService {
 
     async fn read(&self) -> Result<NetworkState, ServiceError> {
         let system = self.connection().await?;
-        let overview = manager::read_with_plugins(&system, &self.plugins)
+        let bundle = Bundle::resolve(&system)
             .await
-            .map_err(failure)?;
-        let agent = self.agent(&system).await;
-        Ok(NetworkState {
-            overview,
-            question: self.questions.borrow().clone(),
-            agent,
-        })
+            .map_err(|_| ServiceError::Unavailable(no_service()))?;
+        match Stack::of(&bundle) {
+            Stack::Manager => {
+                let overview = manager::read_with_plugins(&system, &self.plugins)
+                    .await
+                    .map_err(failure)?;
+                let agent = self.agent(&system).await;
+                Ok(NetworkState::Manager(ManagerState {
+                    overview,
+                    question: self.questions.borrow().clone(),
+                    agent,
+                }))
+            }
+            Stack::Iwd { wifi, links } => {
+                let wifi = match wifi {
+                    true => Some(iwd::read(&system).await.map_err(failure)?),
+                    false => None,
+                };
+                let links = match links {
+                    true => Some(networkd::read(&system).await.map_err(failure)?),
+                    false => None,
+                };
+                Ok(NetworkState::Iwd(IwdState { wifi, links }))
+            }
+            Stack::None => Err(ServiceError::Unavailable(no_service())),
+        }
+    }
+
+    /// Changes from the daemons `stack` names, as whole states.
+    fn stack_updates(
+        &self,
+        system: zbus::Connection,
+        stack: Stack,
+    ) -> BoxStream<'static, Result<NetworkState, ServiceError>> {
+        match stack {
+            Stack::Manager => self.manager_updates(system),
+            Stack::Iwd { wifi, links } => iwd_updates(system, wifi, links),
+            // Wait for a daemon to appear.
+            Stack::None => {
+                futures_util::stream::once(async { Err(ServiceError::Unavailable(no_service())) })
+                    .chain(futures_util::stream::pending())
+                    .boxed()
+            }
+        }
     }
 
     fn take_question(&self) -> Option<SecretRequest> {
@@ -296,6 +388,7 @@ impl NetworkService {
         }
         let system = self.connection().await?;
         let result = match action {
+            NetworkAction::Iwd(action) => run_iwd(&system, action).await,
             NetworkAction::WifiEnabled(enabled) => {
                 manager::set_wireless_enabled(&system, enabled).await
             }
@@ -355,9 +448,154 @@ impl NetworkService {
     }
 }
 
-enum Part {
-    Overview(canopa_services::ServiceState<Overview>),
-    Question(Option<Question>),
+/// Which daemons the page talks to; `Iwd` says which of iwd and networkd run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stack {
+    Manager,
+    Iwd { wifi: bool, links: bool },
+    None,
+}
+
+impl Stack {
+    fn of(bundle: &Bundle) -> Self {
+        let kind = |owner: &Option<bundle::Owner>| owner.as_ref().map(|owner| owner.kind);
+        match (kind(&bundle.status), kind(&bundle.control)) {
+            (Some(bundle::Kind::NetworkManager), _) | (_, Some(bundle::Kind::NetworkManager)) => {
+                Self::Manager
+            }
+            (None, None) => Self::None,
+            (status, control) => Self::Iwd {
+                wifi: control.is_some(),
+                links: status.is_some(),
+            },
+        }
+    }
+}
+
+async fn run_iwd(
+    system: &zbus::Connection,
+    action: IwdAction,
+) -> Result<(), canopa_services::Error> {
+    match action {
+        IwdAction::Powered(device, on) => iwd::set_powered(system, &device, on).await,
+        IwdAction::Connect(network, passphrase) => {
+            if passphrase.is_none() && network.known.is_none() && network.kind != "open" {
+                return Err(canopa_services::Error::Invalid("Enter the password."));
+            }
+            iwd::connect(system, &network, passphrase.as_deref()).await
+        }
+        IwdAction::JoinHidden {
+            device,
+            name,
+            passphrase,
+        } => iwd::connect_hidden(system, &device, &name, passphrase.as_deref()).await,
+        IwdAction::Disconnect(network) => iwd::disconnect(system, &network).await,
+        IwdAction::Forget(known) => iwd::forget(system, &known).await,
+        IwdAction::Autoconnect(known, on) => iwd::set_autoconnect(system, &known, on).await,
+    }
+}
+
+/// iwd's and networkd's observers as whole page states, once each expected
+/// daemon has answered.
+fn iwd_updates(
+    system: zbus::Connection,
+    wifi: bool,
+    links: bool,
+) -> BoxStream<'static, Result<NetworkState, ServiceError>> {
+    enum Part {
+        Wifi(Option<iwd::Overview>),
+        Links(Option<Vec<networkd::Link>>),
+    }
+    let mut parts = futures_util::stream::SelectAll::new();
+    if wifi {
+        parts.push(
+            iwd::watch(system.clone())
+                .map(|state| Part::Wifi(state.available().cloned()))
+                .boxed(),
+        );
+    }
+    if links {
+        parts.push(
+            networkd::watch(system)
+                .map(|state| Part::Links(state.available().cloned()))
+                .boxed(),
+        );
+    }
+    let start = (
+        (!wifi).then_some(None::<iwd::Overview>),
+        (!links).then_some(None::<Vec<networkd::Link>>),
+    );
+    parts
+        .scan(start, |(wifi, links), part| {
+            match part {
+                Part::Wifi(value) => *wifi = Some(value),
+                Part::Links(value) => *links = Some(value),
+            }
+            let state = match (wifi.clone(), links.clone()) {
+                (Some(wifi), Some(links)) => Some(Ok(NetworkState::Iwd(IwdState { wifi, links }))),
+                _ => None,
+            };
+            std::future::ready(Some(state))
+        })
+        .filter_map(std::future::ready)
+        .boxed()
+}
+
+impl NetworkService {
+    fn manager_updates(
+        &self,
+        system: zbus::Connection,
+    ) -> BoxStream<'static, Result<NetworkState, ServiceError>> {
+        enum Part {
+            Overview(canopa_services::ServiceState<Overview>),
+            Question(Option<Question>),
+        }
+        let mut questions = self.questions.subscribe();
+        questions.mark_unchanged();
+        let questions = futures_util::stream::unfold(questions, |mut questions| async move {
+            questions.changed().await.ok()?;
+            let question = questions.borrow_and_update().clone();
+            Some((Part::Question(question), questions))
+        });
+        let overviews = manager::watch(system).map(Part::Overview);
+        let plugins = self.plugins.clone();
+        futures_util::stream::select(overviews.boxed(), questions.boxed())
+            .scan(
+                (None::<Overview>, self.questions.borrow().clone()),
+                move |(overview, question), part| {
+                    let next = match part {
+                        Part::Overview(canopa_services::ServiceState::Available(mut value)) => {
+                            value.vpn_plugins = manager::vpn_plugins(&plugins);
+                            *overview = Some(value);
+                            None
+                        }
+                        Part::Overview(canopa_services::ServiceState::Unavailable) => {
+                            Some(Err(ServiceError::Unavailable(no_service())))
+                        }
+                        Part::Question(value) => {
+                            *question = value;
+                            None
+                        }
+                    };
+                    let item = next.or_else(|| {
+                        overview.clone().map(|overview| {
+                            Ok(NetworkState::Manager(ManagerState {
+                                overview,
+                                question: question.clone(),
+                                agent: true,
+                            }))
+                        })
+                    });
+                    std::future::ready(Some(item))
+                },
+            )
+            .filter_map(std::future::ready)
+            .take_while(|item| std::future::ready(item.is_ok()))
+            .chain(futures_util::stream::once(async {
+                Err(ServiceError::Unavailable(no_service()))
+            }))
+            .boxed()
+    }
 }
 
 impl LiveService for NetworkService {
@@ -365,68 +603,64 @@ impl LiveService for NetworkService {
     type Action = NetworkAction;
 
     fn name(&self) -> String {
-        "NetworkManager".into()
+        fl!("settings-network-service")
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<NetworkState, ServiceError>> {
         let service = self.clone();
-        async move { service.read().await }.boxed()
+        async move {
+            let state = service.read().await?;
+            // iwd does not scan by itself while connected: look once per visit.
+            if let NetworkState::Iwd(IwdState {
+                wifi: Some(wifi), ..
+            }) = &state
+                && let Ok(system) = service.connection().await
+            {
+                for device in wifi.devices.iter().filter(|device| device.state.is_some()) {
+                    let _ = iwd::scan(&system, device).await;
+                }
+            }
+            Ok(state)
+        }
+        .boxed()
     }
 
+    /// Follows the daemon bundle: when NetworkManager, iwd or networkd come
+    /// or go, the page switches to the states of the daemons now running.
     fn updates(&self) -> BoxStream<'static, Result<NetworkState, ServiceError>> {
         let service = self.clone();
         futures_util::stream::once(async move {
-            let Ok(system) = service.connection().await else {
-                return futures_util::stream::iter([Err(ServiceError::Unavailable(fl!(
-                    "settings-error-bus"
-                )))])
-                .boxed();
+            let unavailable = |message| {
+                futures_util::stream::iter([Err(ServiceError::Unavailable(message))]).boxed()
             };
-            let mut questions = service.questions.subscribe();
-            questions.mark_unchanged();
-            let questions = futures_util::stream::unfold(questions, |mut questions| async move {
-                questions.changed().await.ok()?;
-                let question = questions.borrow_and_update().clone();
-                Some((Part::Question(question), questions))
-            });
-            let overviews = manager::watch(system).map(Part::Overview);
-            let plugins = service.plugins.clone();
-            futures_util::stream::select(overviews.boxed(), questions.boxed())
-                .scan(
-                    (None::<Overview>, service.questions.borrow().clone()),
-                    move |(overview, question), part| {
-                        let next = match part {
-                            Part::Overview(canopa_services::ServiceState::Available(mut value)) => {
-                                value.vpn_plugins = manager::vpn_plugins(&plugins);
-                                *overview = Some(value);
-                                None
+            let Ok(system) = service.connection().await else {
+                return unavailable(fl!("settings-error-bus"));
+            };
+            let Ok(watch) = bundle::Watch::new(&system).await else {
+                return unavailable(no_service());
+            };
+            futures_util::stream::unfold(
+                (watch, None::<(Stack, BoxStream<'static, _>)>),
+                move |(mut watch, mut current)| {
+                    let service = service.clone();
+                    let system = system.clone();
+                    async move {
+                        loop {
+                            let stack = Stack::of(&watch.current());
+                            if current.as_ref().is_none_or(|(shown, _)| *shown != stack) {
+                                current =
+                                    Some((stack, service.stack_updates(system.clone(), stack)));
                             }
-                            Part::Overview(canopa_services::ServiceState::Unavailable) => {
-                                Some(Err(ServiceError::Unavailable(no_service())))
+                            let (_, states) = current.as_mut()?;
+                            tokio::select! {
+                                changed = watch.changed() => changed.ok()?,
+                                state = states.next() => return Some((state?, (watch, current))),
                             }
-                            Part::Question(value) => {
-                                *question = value;
-                                None
-                            }
-                        };
-                        let item = next.or_else(|| {
-                            overview.clone().map(|overview| {
-                                Ok(NetworkState {
-                                    overview,
-                                    question: question.clone(),
-                                    agent: true,
-                                })
-                            })
-                        });
-                        std::future::ready(Some(item))
-                    },
-                )
-                .filter_map(std::future::ready)
-                .take_while(|item| std::future::ready(item.is_ok()))
-                .chain(futures_util::stream::once(async {
-                    Err(ServiceError::Unavailable(no_service()))
-                }))
-                .boxed()
+                        }
+                    }
+                },
+            )
+            .boxed()
         })
         .flatten()
         .boxed()
@@ -541,8 +775,16 @@ mod tests {
     use canopa_services::testing::{TestBus, network::*};
     use std::time::Duration;
 
-    async fn state(service: &NetworkService) -> NetworkState {
-        service.snapshot().await.unwrap()
+    /// The NetworkManager part of a state.
+    fn manager(state: NetworkState) -> ManagerState {
+        match state {
+            NetworkState::Manager(state) => state,
+            other => panic!("not NetworkManager: {other:?}"),
+        }
+    }
+
+    async fn state(service: &NetworkService) -> ManagerState {
+        manager(service.snapshot().await.unwrap())
     }
 
     #[test]
@@ -556,7 +798,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_page_is_unavailable_without_network_manager_and_recovers() {
+    async fn the_page_is_unavailable_without_a_network_service_and_recovers() {
         let bus = TestBus::new();
         let root = tempfile::tempdir().unwrap();
         let service = NetworkService::with(bus.connect().await, root.path().into(), "nmcli".into());
@@ -592,7 +834,12 @@ mod tests {
             .unwrap();
         let service = NetworkService::with(bus.connect().await, root.path().into(), nmcli);
         let overview = state(&service).await.overview;
-        let apply = async |action| service.apply(action).await.map(|state| state.unwrap());
+        let apply = async |action| {
+            service
+                .apply(action)
+                .await
+                .map(|state| manager(state.unwrap()))
+        };
 
         let off = apply(NetworkAction::WifiEnabled(false)).await.unwrap();
         assert!(!off.overview.wireless_enabled);
@@ -718,7 +965,7 @@ mod tests {
         let answer = async {
             let question = tokio::time::timeout(Duration::from_secs(3), async {
                 loop {
-                    if let Some(Ok(state)) = updates.next().await
+                    if let Some(Ok(NetworkState::Manager(state))) = updates.next().await
                         && let Some(question) = state.question
                     {
                         return question;
@@ -729,14 +976,16 @@ mod tests {
             .unwrap();
             assert_eq!(question.connection, "Office VPN");
             assert_eq!(question.fields[0].key, "password");
-            let after = service
-                .apply(NetworkAction::Answer(HashMap::from([(
-                    "password".into(),
-                    "one-time".into(),
-                )])))
-                .await
-                .unwrap()
-                .unwrap();
+            let after = manager(
+                service
+                    .apply(NetworkAction::Answer(HashMap::from([(
+                        "password".into(),
+                        "one-time".into(),
+                    )])))
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
             assert!(after.question.is_none());
         };
         let (secrets, ()) = tokio::join!(ask, answer);
@@ -758,5 +1007,151 @@ mod tests {
                 NetworkAction::Answer(HashMap::from([("a".into(), "secret".into())]))
             ) == "secret"
         );
+    }
+
+    fn iwd_state(state: NetworkState) -> IwdState {
+        match state {
+            NetworkState::Iwd(state) => state,
+            other => panic!("not iwd: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn on_iwd_and_networkd_the_page_shows_wifi_saved_networks_and_wired_links() {
+        use canopa_services::testing::iwd::{FakeIwd, FakeNetworkd, WIRED};
+        let bus = TestBus::new();
+        let iwd = FakeIwd::serve(&bus).await;
+        let root = tempfile::tempdir().unwrap();
+        let service = NetworkService::with(bus.connect().await, root.path().into(), "nmcli".into());
+        // Without networkd, wired links are unknown rather than absent.
+        let state = iwd_state(service.snapshot().await.unwrap());
+        assert_eq!(state.links, None);
+        let _networkd = FakeNetworkd::serve(&bus, WIRED).await;
+        let state = iwd_state(service.snapshot().await.unwrap());
+        let wifi = state.wifi.unwrap();
+        assert_eq!(wifi.networks.len(), 4);
+        assert_eq!(wifi.known.len(), 2);
+        let links = state.links.unwrap();
+        let wired: Vec<_> = links.iter().filter(|link| link.kind == "ether").collect();
+        assert_eq!(wired[0].name, "enp5s0");
+        assert_eq!(wired[0].gateways, ["192.168.1.1"]);
+        // Opening the page asks the station for fresh results.
+        assert!(iwd.calls().contains(&"Scan".to_string()));
+    }
+
+    #[tokio::test]
+    async fn each_iwd_page_action_reaches_iwd() {
+        use canopa_services::testing::iwd::FakeIwd;
+        let bus = TestBus::new();
+        let iwd = FakeIwd::serve(&bus).await;
+        let root = tempfile::tempdir().unwrap();
+        let service = NetworkService::with(bus.connect().await, root.path().into(), "nmcli".into());
+        let wifi = iwd_state(service.snapshot().await.unwrap()).wifi.unwrap();
+        let network = |name: &str| {
+            wifi.networks
+                .iter()
+                .find(|n| n.name == name)
+                .unwrap()
+                .clone()
+        };
+        let apply = async |action| {
+            service
+                .apply(NetworkAction::Iwd(action))
+                .await
+                .map(|state| iwd_state(state.unwrap()))
+        };
+
+        let off = apply(IwdAction::Powered(wifi.devices[0].clone(), false))
+            .await
+            .unwrap();
+        assert!(!off.wifi.unwrap().devices[0].powered);
+        apply(IwdAction::Disconnect(network("Home"))).await.unwrap();
+        // A new secured network needs its password; a known one does not.
+        assert!(matches!(
+            apply(IwdAction::Connect(network("Neighbour"), None)).await,
+            Err(ServiceError::Failed(_))
+        ));
+        apply(IwdAction::Connect(
+            network("Neighbour"),
+            Some("next door".into()),
+        ))
+        .await
+        .unwrap();
+        apply(IwdAction::Connect(network("Home"), None))
+            .await
+            .unwrap();
+        apply(IwdAction::JoinHidden {
+            device: wifi.devices[0].clone(),
+            name: "Attic".into(),
+            passphrase: Some("up the stairs".into()),
+        })
+        .await
+        .unwrap();
+        apply(IwdAction::Autoconnect(wifi.known[1].clone(), true))
+            .await
+            .unwrap();
+        let after = apply(IwdAction::Forget(wifi.known[0].clone()))
+            .await
+            .unwrap();
+        assert!(
+            !after
+                .wifi
+                .unwrap()
+                .known
+                .iter()
+                .any(|known| known.name == "Home")
+        );
+        assert_eq!(
+            iwd.calls()[1..],
+            [
+                "Powered false",
+                "Disconnect",
+                "Connect Neighbour next door",
+                "Connect Home",
+                "ConnectHidden Attic up the stairs",
+                "AutoConnect Hotel true",
+                "Forget Home",
+            ]
+        );
+        // The typed password never reaches logs.
+        assert_eq!(
+            format!(
+                "{:?}",
+                NetworkAction::Iwd(IwdAction::Connect(network("Cafe"), Some("secret".into())))
+            ),
+            "wifi-Cafe"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_page_follows_the_daemons_as_they_come_and_go() {
+        use canopa_services::testing::iwd::FakeIwd;
+        let bus = TestBus::new();
+        let root = tempfile::tempdir().unwrap();
+        let service = NetworkService::with(bus.connect().await, root.path().into(), "nmcli".into());
+        let mut updates = service.updates();
+        let mut next = async || {
+            tokio::time::timeout(Duration::from_secs(3), updates.next())
+                .await
+                .unwrap()
+                .unwrap()
+        };
+        assert!(matches!(next().await, Err(ServiceError::Unavailable(_))));
+        let _iwd = FakeIwd::serve(&bus).await;
+        assert!(matches!(
+            next().await,
+            Ok(NetworkState::Iwd(IwdState {
+                wifi: Some(_),
+                links: None
+            }))
+        ));
+        // NetworkManager takes over both status and Wi-Fi when it appears.
+        let _nm = FakeNetworkManager::serve(&bus).await;
+        let manager = loop {
+            if let Ok(NetworkState::Manager(state)) = next().await {
+                break state;
+            }
+        };
+        assert_eq!(manager.overview.devices.len(), 2);
     }
 }
