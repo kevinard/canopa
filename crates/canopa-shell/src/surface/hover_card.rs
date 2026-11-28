@@ -96,12 +96,24 @@ const ROW_GAP: f32 = 2.0;
 const ROW_PADDING: f32 = 6.0;
 const THUMB_WIDTH: f32 = 108.0;
 const THUMB_HEIGHT: f32 = 60.0;
-const CLOSE_SIZE: f32 = 26.0;
+const CLOSE_SIZE: f32 = 32.0;
 const FOOTER_HEIGHT: f32 = 18.0;
+/// A single window's card: its thumbnail large, captioned below.
+const SOLO_WIDTH: f32 = 248.0;
+/// The narrowest a single window's card gets, around a portrait thumbnail.
+const SOLO_MIN_WIDTH: f32 = 200.0;
+const SOLO_THUMB_HEIGHT: f32 = 140.0;
+/// The tallest a single window's thumbnail grows, for a portrait window.
+const SOLO_THUMB_MAX_HEIGHT: f32 = 172.0;
+const SOLO_CAPTION_HEIGHT: f32 = 38.0;
 const HEADER_ICON: f32 = 18.0;
 /// The workspace strip's height, and the longest it may grow.
-const STRIP_SIZE: f32 = 124.0;
-const STRIP_MAX_LENGTH: f32 = 460.0;
+const STRIP_SIZE: f32 = 150.0;
+const STRIP_MAX_LENGTH: f32 = 520.0;
+/// The caption under each column of a workspace card.
+const CAPTION_HEIGHT: f32 = 36.0;
+/// The column's spacing above the captions.
+const CAPTION_GAP: f32 = SECTION_GAP;
 const WORKSPACE_MIN_WIDTH: f32 = 220.0;
 
 /// The workspace card's strip: the minimap's layout with room for faces.
@@ -115,12 +127,25 @@ pub(crate) const CARD_STRIP: StripMetrics = StripMetrics {
     min_extent: 12.0,
     frame_inset: 3.0,
     radius: 6.0,
+    // The card always outlines the screen, around every window on it; the
+    // focused window has its own accent ring inside.
+    always_frame: true,
+    frame_width: 1.5,
 };
 
 impl HoverCard {
     /// The content size inside the card's padding and border.
     pub fn content_size(&self) -> (f32, f32) {
         match self {
+            HoverCard::Windows(list) if is_solo(list) => (
+                solo_width(&list.rows[0]),
+                HEADER_HEIGHT
+                    + SECTION_GAP
+                    + 2.0 * ROW_PADDING
+                    + solo_thumb_size(&list.rows[0]).1
+                    + SECTION_GAP
+                    + SOLO_CAPTION_HEIGHT,
+            ),
             HoverCard::Windows(list) => {
                 let rows = list.rows.len() as f32;
                 let mut height = HEADER_HEIGHT;
@@ -141,6 +166,7 @@ impl HoverCard {
                 let width =
                     CARD_STRIP.strip_length(&card.strip, &lengths) + 2.0 * CARD_STRIP.frame_inset;
                 height += SECTION_GAP + STRIP_SIZE + 2.0 * CARD_STRIP.frame_inset;
+                height += CAPTION_GAP + CAPTION_HEIGHT;
                 if card.strip.floating > 0 {
                     height += SECTION_GAP + FOOTER_HEIGHT;
                 }
@@ -172,6 +198,26 @@ impl HoverCard {
 
 fn message(event: Event) -> crate::app::Message {
     crate::app::Message::HoverCard(event)
+}
+
+/// Where `text` breaks to fit `width` on its first line: the words that fit,
+/// and the rest. `None` when it fits whole or its first word does not.
+fn split_line(text: &str, width: f32, size: f32) -> Option<(String, String)> {
+    if crate::theme::text_width(text, size) <= width {
+        return None;
+    }
+    let mut end = None;
+    for (index, _) in text.match_indices(' ') {
+        if crate::theme::text_width(&text[..index], size) > width {
+            break;
+        }
+        end = Some(index);
+    }
+    let end = end?;
+    Some((
+        text[..end].trim_end().to_owned(),
+        text[end..].trim_start().to_owned(),
+    ))
 }
 
 fn muted() -> iced::Color {
@@ -231,7 +277,160 @@ fn header<'a>(
     .into()
 }
 
+/// A single window's thumbnail in the window's own shape: as wide as the card
+/// allows, or as tall as [`SOLO_THUMB_MAX_HEIGHT`] for a portrait window.
+fn solo_thumb_size(row: &WindowRow) -> (f32, f32) {
+    let inner = SOLO_WIDTH - 2.0 * ROW_PADDING;
+    let Some(thumbnail) = row
+        .thumbnail
+        .as_ref()
+        .filter(|t| t.width > 0 && t.height > 0)
+    else {
+        return (inner, SOLO_THUMB_HEIGHT);
+    };
+    let aspect = thumbnail.width as f32 / thumbnail.height as f32;
+    let height = (inner / aspect).min(SOLO_THUMB_MAX_HEIGHT);
+    ((height * aspect).clamp(96.0, inner), height.max(72.0))
+}
+
+/// A single window's card fits its thumbnail.
+fn solo_width(row: &WindowRow) -> f32 {
+    (solo_thumb_size(row).0 + 2.0 * ROW_PADDING).clamp(SOLO_MIN_WIDTH, SOLO_WIDTH)
+}
+
+/// One window: shown large with its title and place below, like the columns of
+/// a workspace card, rather than as a list of one.
+fn is_solo(list: &WindowList) -> bool {
+    list.count == 1 && list.rows.len() == 1
+}
+
+fn solo_window<'a>(
+    list: &'a WindowList,
+    row_data: &'a WindowRow,
+) -> Element<'a, crate::app::Message> {
+    let colors = crate::theme::palette();
+    let app = &list.app;
+    let width = solo_width(row_data);
+    let inner = width - 2.0 * ROW_PADDING;
+    let thumb = solo_thumb_size(row_data);
+    let close = button(
+        container(crate::theme::icon(
+            include_bytes!("../../assets/close.svg"),
+            14.0,
+            muted(),
+        ))
+        .center_x(26)
+        .center_y(26),
+    )
+    .padding(0)
+    .width(26)
+    .height(26)
+    .on_press(message(Event::CloseWindow(row_data.id)))
+    .style(move |_, status| button::Style {
+        background: Some(
+            match status {
+                button::Status::Hovered => colors.text.scale_alpha(0.16),
+                button::Status::Pressed => colors.text.scale_alpha(0.24),
+                _ => colors.text.scale_alpha(0.08),
+            }
+            .into(),
+        ),
+        border: iced::border::rounded(13),
+        ..Default::default()
+    });
+    let size = crate::theme::body_size();
+    let heading = container(
+        row![
+            crate::modules::taskbar::application_icon(
+                app.icon.as_ref(),
+                &app.key,
+                &app.name,
+                HEADER_ICON,
+            ),
+            crate::theme::strong_text(crate::theme::ellipsize(
+                &app.name,
+                width - HEADER_ICON - 26.0 - 24.0,
+                size,
+            ))
+            .wrapping(text::Wrapping::None),
+            Space::new().width(Length::Fill),
+            close,
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .padding([0, 4]),
+    )
+    .height(HEADER_HEIGHT)
+    .align_y(Alignment::Center);
+    // The window's title, then where it is. A title that only repeats the
+    // application's name, already in the heading, leaves where it is alone.
+    let title = (row_data.title.trim() != app.name.trim()).then_some(&row_data.title);
+    let label = crate::theme::label_size();
+    let mut caption = column![].spacing(2).align_x(Alignment::Center);
+    if let Some(title) = title {
+        caption = caption.push(
+            text(crate::theme::ellipsize(title, inner - 4.0, size))
+                .font(iced::Font {
+                    weight: iced::font::Weight::Semibold,
+                    ..crate::theme::font()
+                })
+                .size(size)
+                .color(if row_data.urgent {
+                    colors.warning
+                } else {
+                    colors.text
+                })
+                .wrapping(text::Wrapping::None),
+        );
+    }
+    if let Some(detail) = row_data.detail.as_ref() {
+        caption = caption.push(
+            text(crate::theme::ellipsize(detail, inner - 4.0, label))
+                .font(crate::theme::font())
+                .size(label)
+                .color(muted())
+                .wrapping(text::Wrapping::None),
+        );
+    }
+    let body = button(
+        column![
+            container(face(
+                row_data.thumbnail.as_ref(),
+                app,
+                thumb.0,
+                thumb.1,
+                8.0,
+                false,
+            ))
+            .center_x(Length::Fill),
+            container(caption)
+                .height(SOLO_CAPTION_HEIGHT)
+                .padding([0, 2])
+                .center_x(Length::Fill)
+                .align_y(Alignment::Center),
+        ]
+        .spacing(SECTION_GAP),
+    )
+    .padding(ROW_PADDING)
+    .width(Length::Fill)
+    .on_press(message(Event::FocusWindow(row_data.id)))
+    .style(move |_, status| button::Style {
+        background: matches!(status, button::Status::Hovered | button::Status::Pressed)
+            .then(|| colors.text.scale_alpha(0.07).into()),
+        text_color: colors.text,
+        border: iced::border::rounded(12),
+        ..Default::default()
+    });
+    column![heading, body]
+        .spacing(SECTION_GAP)
+        .width(width)
+        .into()
+}
+
 fn window_list(list: &WindowList) -> Element<'_, crate::app::Message> {
+    if is_solo(list) {
+        return solo_window(list, &list.rows[0]);
+    }
     let mut content = column![header(
         Some(crate::modules::taskbar::application_icon(
             list.app.icon.as_ref(),
@@ -240,7 +439,8 @@ fn window_list(list: &WindowList) -> Element<'_, crate::app::Message> {
             HEADER_ICON,
         )),
         &list.app.name,
-        Some(fl!("shell-taskbar-windows", count = list.count)),
+        // One window needs no count.
+        (list.count > 1).then(|| fl!("shell-taskbar-windows", count = list.count)),
     )]
     .spacing(SECTION_GAP)
     .width(LIST_WIDTH);
@@ -386,8 +586,14 @@ fn window_row<'a>(row_data: &'a WindowRow, app: &AppFace) -> Element<'a, crate::
     } else {
         colors.text
     };
+    // A window titled like its application, which the heading names already,
+    // is told apart by where it is.
+    let (title, detail) = match &row_data.detail {
+        Some(detail) if row_data.title.trim() == app.name.trim() => (detail, None),
+        detail => (&row_data.title, detail.as_ref()),
+    };
     let mut lines = column![
-        text(crate::theme::ellipsize(&row_data.title, text_width, body))
+        text(crate::theme::ellipsize(title, text_width, body))
             .font(if row_data.focused {
                 iced::Font {
                     weight: iced::font::Weight::Semibold,
@@ -402,7 +608,7 @@ fn window_row<'a>(row_data: &'a WindowRow, app: &AppFace) -> Element<'a, crate::
     ]
     .spacing(2)
     .width(text_width);
-    if let Some(detail) = &row_data.detail {
+    if let Some(detail) = detail {
         lines = lines.push(
             text(crate::theme::ellipsize(detail, text_width, label))
                 .font(crate::theme::font())
@@ -425,11 +631,14 @@ fn window_row<'a>(row_data: &'a WindowRow, app: &AppFace) -> Element<'a, crate::
     .height(CLOSE_SIZE)
     .on_press(message(Event::CloseWindow(row_data.id)))
     .style(move |_, status| button::Style {
-        background: match status {
-            button::Status::Hovered => Some(colors.text.scale_alpha(0.12).into()),
-            button::Status::Pressed => Some(colors.text.scale_alpha(0.2).into()),
-            _ => None,
-        },
+        background: Some(
+            match status {
+                button::Status::Hovered => colors.text.scale_alpha(0.16),
+                button::Status::Pressed => colors.text.scale_alpha(0.24),
+                _ => colors.text.scale_alpha(0.08),
+            }
+            .into(),
+        ),
         border: iced::border::rounded(CLOSE_SIZE / 2.0),
         ..Default::default()
     });
@@ -508,7 +717,7 @@ fn workspace(card: &WorkspaceCard) -> Element<'_, crate::app::Message> {
             .width(WORKSPACE_MIN_WIDTH)
             .into();
     }
-    let strip_colors = StripColors::themed(colors.text.scale_alpha(0.45), 0.22);
+    let strip_colors = StripColors::themed(colors.text.scale_alpha(0.7), 0.22);
     let strip = draw_strip(
         &card.strip,
         CARD_STRIP,
@@ -519,6 +728,100 @@ fn workspace(card: &WorkspaceCard) -> Element<'_, crate::app::Message> {
         |tile, place| workspace_tile(tile, place, card.faces.iter().find(|f| f.id == tile.id)),
     );
     content = content.push(container(strip).center_x(Length::Fill));
+    // Each column is captioned by its window's icon and title (its focused one
+    // when it stacks several): the thumbnails are too small to name them.
+    let lengths = CARD_STRIP.column_lengths(&card.strip, STRIP_SIZE, STRIP_MAX_LENGTH);
+    let columns = &card.strip.columns;
+    let size = crate::theme::label_size();
+    let mut captions = row![Space::new().width(CARD_STRIP.frame_inset)];
+    for (index, column) in columns.iter().enumerate() {
+        let width = lengths.get(index).copied().unwrap_or(0.0) + CARD_STRIP.tray_length(column);
+        let tile = column
+            .tiles
+            .iter()
+            .find(|tile| tile.focused)
+            .or(column.tiles.first());
+        let face = tile.and_then(|tile| card.faces.iter().find(|face| face.id == tile.id));
+        let app = face.map(|face| face.app.name.clone());
+        let title = tile.and_then(|tile| tile.title.clone());
+        // Two lines: the application's icon and the window's title, which tells
+        // windows apart, then the application's name when the title says more.
+        let (mut name, mut detail) = match (app, title) {
+            (Some(app), Some(title)) if title != app => (title, Some(app)),
+            (Some(app), _) => (app, None),
+            (None, title) => (title.unwrap_or_default(), None),
+        };
+        // A title too long for one line takes the second line too, in place
+        // of the application's name: "Weekly plan" tells windows apart.
+        let first_room = (width - 4.0 - if face.is_some() { 19.0 } else { 0.0 }).max(20.0);
+        let mut continued = false;
+        if let Some((first, rest)) = split_line(&name, first_room, size) {
+            name = first;
+            detail = Some(rest);
+            continued = true;
+        }
+        // The focused window's title is bold, as in the strip's ring.
+        let title_font = if tile.is_some_and(|tile| tile.focused) {
+            iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..crate::theme::font()
+            }
+        } else {
+            crate::theme::font()
+        };
+        let title_color = colors.text;
+        let mut heading = row![].spacing(5).align_y(Alignment::Center);
+        let mut room = width - 4.0;
+        if let Some(face) = face {
+            heading = heading.push(crate::modules::taskbar::application_icon(
+                face.app.icon.as_ref(),
+                &face.app.key,
+                &face.app.name,
+                14.0,
+            ));
+            room -= 19.0;
+        }
+        heading = heading.push(
+            text(crate::theme::ellipsize(&name, room.max(20.0), size))
+                .font(title_font)
+                .size(size)
+                .color(title_color)
+                .wrapping(text::Wrapping::None),
+        );
+        let mut caption = column![heading].spacing(2).align_x(Alignment::Center);
+        if let Some(detail) = detail {
+            // The title's second line reads like its first; the application's
+            // name is quieter.
+            let (font, detail_size, color) = if continued {
+                (title_font, size, title_color)
+            } else {
+                (crate::theme::font(), size - 1.0, muted())
+            };
+            caption = caption.push(
+                text(crate::theme::ellipsize(
+                    &detail,
+                    (width - 4.0).max(20.0),
+                    detail_size,
+                ))
+                .font(font)
+                .size(detail_size)
+                .color(color)
+                .wrapping(text::Wrapping::None),
+            );
+        }
+        captions = captions.push(
+            container(caption)
+                .width(width)
+                .height(CAPTION_HEIGHT)
+                .center_x(width)
+                .align_y(Alignment::Start)
+                .clip(true),
+        );
+        if index + 1 < columns.len() {
+            captions = captions.push(Space::new().width(CARD_STRIP.gap_after(columns, index)));
+        }
+    }
+    content = content.push(container(captions).center_x(Length::Fill));
     if card.strip.floating > 0 {
         content = content.push(
             container(
@@ -708,6 +1011,19 @@ mod tests {
     }
 
     #[test]
+    fn long_titles_break_between_words() {
+        let size = crate::theme::label_size();
+        assert_eq!(split_line("Notes", 200.0, size), None);
+        let (first, rest) = split_line("Notes — Weekly plan for the team", 80.0, size).unwrap();
+        assert!(crate::theme::text_width(&first, size) <= 80.0);
+        assert_eq!(
+            format!("{first} {rest}"),
+            "Notes — Weekly plan for the team"
+        );
+        assert_eq!(split_line("Unbreakablelongtitle", 20.0, size), None);
+    }
+
+    #[test]
     fn window_lists_grow_by_row_and_count_the_rest() {
         let list = |rows: usize, count: usize| {
             HoverCard::Windows(WindowList {
@@ -716,10 +1032,14 @@ mod tests {
                 rows: (0..rows as u64).map(row).collect(),
             })
         };
-        let (width, one) = list(1, 1).content_size();
-        let (_, two) = list(2, 2).content_size();
+        // A single window is a captioned thumbnail, not a list of one.
+        let (solo, _) = list(1, 1).content_size();
+        assert_eq!(solo, SOLO_WIDTH);
+        let (width, one) = list(1, 3).content_size();
+        let (_, two) = list(2, 3).content_size();
         assert_eq!(width, LIST_WIDTH);
         assert_eq!(two - one, ROW_HEIGHT + ROW_GAP);
+        let (_, two) = list(2, 2).content_size();
         let (_, more) = list(2, 5).content_size();
         assert_eq!(more - two, SECTION_GAP + FOOTER_HEIGHT);
         assert_eq!(list(3, 3).windows(), vec![0, 1, 2]);
@@ -743,7 +1063,7 @@ mod tests {
                     columns,
                     workspace_height: 1000.0,
                     floating,
-                    view_width: None,
+                    view: None,
                 },
                 faces: Vec::new(),
             })
@@ -755,9 +1075,15 @@ mod tests {
         let (width, height) = card(vec![column(1000.0), column(2000.0)], 0).content_size();
         let strip = STRIP_SIZE * 3.0 + CARD_STRIP.column_gap + 2.0 * CARD_STRIP.frame_inset;
         assert_eq!(width, strip);
+        // Each window is named on its own line under the previews.
         assert_eq!(
             height,
-            HEADER_HEIGHT + SECTION_GAP + STRIP_SIZE + 2.0 * CARD_STRIP.frame_inset
+            HEADER_HEIGHT
+                + SECTION_GAP
+                + STRIP_SIZE
+                + 2.0 * CARD_STRIP.frame_inset
+                + CAPTION_GAP
+                + CAPTION_HEIGHT
         );
         // Wide workspaces shrink to the card's limit; floating windows add a line.
         let (width, floating) = card(vec![column(9000.0), column(9000.0)], 2).content_size();

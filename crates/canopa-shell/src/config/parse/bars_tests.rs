@@ -425,8 +425,8 @@ bar "main" {
         assert_eq!(config.bars[0].panel.height, None);
         assert_eq!(config.bars[0].panel.max_width, None);
         assert_eq!(config.bars[0].panel.max_height, None);
-        assert_eq!(config.bars[0].panel.animation.open_ms, 180.0);
-        assert_eq!(config.bars[0].panel.animation.close_ms, 160.0);
+        assert_eq!(config.bars[0].panel.animation.open_ms, 240.0);
+        assert_eq!(config.bars[0].panel.animation.close_ms, 150.0);
         assert!(!config.bars[0].uses_drawer());
     }
 

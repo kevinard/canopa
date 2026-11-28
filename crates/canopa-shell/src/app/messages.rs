@@ -532,6 +532,9 @@ pub(super) fn niri_event_diagnostic_label(event: &niri_ipc::Event) -> &'static s
         niri_ipc::Event::CastStopped { .. } => "Niri::CastStopped",
         niri_ipc::Event::TouchpadToggled { .. } => "Niri::TouchpadToggled",
         niri_ipc::Event::OverviewTyped { .. } => "Niri::OverviewTyped",
+        niri_ipc::Event::OverviewWorkspaceLabelClicked { .. } => {
+            "Niri::OverviewWorkspaceLabelClicked"
+        }
     }
 }
 

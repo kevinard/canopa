@@ -424,8 +424,15 @@ impl PanelRuntime {
             default_viewport_height
         };
         let current_bottom = current_top + viewport_height;
-        let row_top = index as f32 * row_extent;
-        let row_bottom = row_top + row_extent;
+        // Launcher section headings sit above the first row of their group and
+        // scroll into view with it.
+        let sections = super::launcher::section_starts(&self.active_panel_menu_entries());
+        let headings = |rows: &dyn Fn(usize) -> bool| {
+            sections.iter().filter(|start| rows(**start)).count() as f32
+                * super::launcher::SECTION_HEADING_HEIGHT
+        };
+        let row_top = index as f32 * row_extent + headings(&|start| start < index);
+        let row_bottom = index as f32 * row_extent + headings(&|start| start <= index) + row_extent;
         if row_top < current_top {
             Some(row_top)
         } else if row_bottom > current_bottom {

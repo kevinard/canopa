@@ -1031,10 +1031,19 @@ pub(crate) fn panel_control<'a>(
             .into()
         }
         PanelControlEnd::Navigate | PanelControlEnd::NavigateActive => {
-            crate::theme::text(canopa_ui::direction::forward_chevron())
-                .size(22)
-                .style(canopa_ui::muted)
-                .into()
+            // The same round "details" mark as on the radio tiles.
+            container(
+                crate::theme::text(canopa_ui::direction::forward_chevron())
+                    .size(18)
+                    .color(palette.text),
+            )
+            .center(30)
+            .style(move |_| {
+                container::Style::default()
+                    .background(palette.text.scale_alpha(0.08))
+                    .border(iced::Border::default().rounded(15))
+            })
+            .into()
         }
         PanelControlEnd::Status(label) => crate::theme::text(label)
             .size(crate::theme::label_size())
@@ -1228,29 +1237,34 @@ fn panel_tile_with_details<'a>(
     use iced::widget::{button, column};
     let palette = crate::theme::palette();
     let disabled = primary.is_none();
-    // "On" is one look across the Shell: the accent fill with dark text, as on
-    // the focused workspace. "Off" keeps the raised card.
+    // "On" fills the tile with a deep accent and dark text, unmistakable at a
+    // glance; "Off" keeps the raised card.
     let ink = if active {
         palette.on_accent
     } else {
         palette.text
     };
     let soft = if active {
-        palette.on_accent.scale_alpha(0.72)
+        palette.on_accent.scale_alpha(0.78)
     } else {
         palette.muted
     };
-    let badge = container(crate::theme::icon(icon, 18.0, ink))
-        .center(30)
-        .style(move |_| {
-            container::Style::default()
-                .background(if active {
-                    palette.on_accent.scale_alpha(0.12)
-                } else {
-                    palette.text.scale_alpha(0.09)
-                })
-                .border(iced::Border::default().rounded(15))
-        });
+    // On, the disc is dark with an accent glyph: the brightest mark on the tile.
+    let badge = container(crate::theme::icon(
+        icon,
+        18.0,
+        if active { palette.accent } else { ink },
+    ))
+    .center(30)
+    .style(move |_| {
+        container::Style::default()
+            .background(if active {
+                palette.on_accent.scale_alpha(0.82)
+            } else {
+                palette.text.scale_alpha(0.09)
+            })
+            .border(iced::Border::default().rounded(15))
+    });
     let title_label = title.clone();
     // A long device name ends in an ellipsis within the space the tile gives
     // its text, instead of running into the divider and chevron.
@@ -1280,13 +1294,25 @@ fn panel_tile_with_details<'a>(
             .align_y(Alignment::Center)
             .into()
     });
+    let split = details.is_some();
     let mut cells: Vec<Element<'a, Message>> = vec![badge.into(), text.into()];
-    let details_shown = details.is_some();
-    if let Some((open, key)) = details {
-        // Its own target, set off by a hairline: the rest of the tile switches the radio.
+    if details.is_none() && chevron {
         cells.push(
-            container(iced::widget::Space::new().width(1).height(28))
-                .style(move |_| container::Style::default().background(ink.scale_alpha(0.2)))
+            crate::theme::text(canopa_ui::direction::forward_chevron())
+                .size(18)
+                .color(soft)
+                .into(),
+        );
+    }
+    let card = crate::theme::ui(canopa_theme::UiKind::Card);
+    let radius = card.radius[0].px();
+    if let Some((open, key)) = details {
+        // One tile, clearly divided: its body switches the radio, and a
+        // full-height area past a divider, with its own hover, opens settings.
+        cells.push(
+            container(iced::widget::Space::new().width(1).height(Length::Fill))
+                .padding([10, 0])
+                .style(move |_| container::Style::default().background(ink.scale_alpha(0.3)))
                 .into(),
         );
         cells.push(canopa_ui::accessibility::semantic(
@@ -1300,35 +1326,28 @@ fn panel_tile_with_details<'a>(
                 container(
                     crate::theme::text(canopa_ui::direction::forward_chevron())
                         .size(18)
-                        .color(soft),
+                        .color(ink),
                 )
-                .center(22)
-                .width(20),
+                .center(Length::Fill),
             )
             .padding(0)
+            .width(40)
+            .height(Length::Fill)
             .on_press(open)
             .style(move |_, status| {
                 let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
                 button::Style {
-                    background: engaged.then(|| ink.scale_alpha(0.12).into()),
-                    border: iced::Border::default().rounded(13),
+                    background: engaged.then(|| ink.scale_alpha(0.14).into()),
+                    border: iced::Border::default().rounded(radius),
                     ..Default::default()
                 }
             }),
         ));
-    } else if chevron {
-        cells.push(
-            crate::theme::text(canopa_ui::direction::forward_chevron())
-                .size(18)
-                .color(soft)
-                .into(),
-        );
     }
     let content = canopa_ui::direction::row(cells)
-        .spacing(if details_shown { 6 } else { 8 })
+        .spacing(if split { 7 } else { 8 })
+        .height(Length::Fill)
         .align_y(Alignment::Center);
-    let card = crate::theme::ui(canopa_theme::UiKind::Card);
-    let radius = card.radius[0].px();
     canopa_ui::accessibility::semantic(
         node,
         button(
@@ -1336,26 +1355,42 @@ fn panel_tile_with_details<'a>(
                 .height(Length::Fill)
                 .align_y(Alignment::Center),
         )
-        .padding(if details_shown { [8, 8] } else { [8, 10] })
+        .padding(if split {
+            // The details area reaches the tile's trailing edge.
+            let (left, right) = if canopa_ui::direction::is_rtl() {
+                (0.0, 7.0)
+            } else {
+                (7.0, 0.0)
+            };
+            iced::Padding {
+                top: 0.0,
+                bottom: 0.0,
+                left,
+                right,
+            }
+        } else {
+            iced::Padding {
+                top: 8.0,
+                bottom: 8.0,
+                left: 10.0,
+                right: 10.0,
+            }
+        })
         .width(Length::Fill)
         .height(64)
         .on_press_maybe(primary)
         .style(move |theme, status| {
             let colors = canopa_ui::colors(theme);
-            let resting = if active { colors.accent } else { colors.raised };
+            let resting = if active {
+                mix(colors.raised, colors.accent, 0.82)
+            } else {
+                colors.raised
+            };
             let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
             button::Style {
                 background: Some(
                     if engaged {
-                        mix(
-                            resting,
-                            if active {
-                                colors.on_accent
-                            } else {
-                                colors.text
-                            },
-                            0.08,
-                        )
+                        mix(resting, colors.text, 0.08)
                     } else {
                         resting
                     }
@@ -1640,4 +1675,25 @@ mod tests {
 
         let _ = std::fs::remove_file(path);
     }
+}
+
+/// The name in front of a Quick settings level slider ("Volume", "Brightness"),
+/// in a column as wide as the longest of them, so every track starts and ends
+/// at the same place.
+pub(crate) fn level_label<'a>(label: String) -> Element<'a, Message> {
+    let size = crate::theme::label_size();
+    let width = [fl!("shell-osd-volume"), fl!("shell-osd-brightness")]
+        .iter()
+        .map(|name| crate::theme::text_width(name, size))
+        .fold(0.0_f32, f32::max)
+        .ceil()
+        + 2.0;
+    container(
+        crate::theme::text(label)
+            .size(size)
+            .style(canopa_ui::muted)
+            .wrapping(iced::widget::text::Wrapping::None),
+    )
+    .width(width)
+    .into()
 }

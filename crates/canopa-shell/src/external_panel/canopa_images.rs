@@ -133,15 +133,19 @@ fn prepare_assets(
                 names,
                 theme,
                 scale,
-            } => resolver.resolve(
-                &IconQuery {
+            } => {
+                let query = |theme| IconQuery {
                     scale: *scale,
-                    theme: Some(theme),
+                    theme,
                     generic_fallback: true,
                     ..IconQuery::new(names, 34)
-                },
-                &|| false,
-            ),
+                };
+                // A provider's theme (often plain hicolor) may lack the icon
+                // that the desktop's own theme has, as banners show it.
+                resolver
+                    .resolve(&query(Some(theme)), &|| false)
+                    .or_else(|| resolver.resolve(&query(None), &|| false))
+            }
         };
         if let Some(image) = path.and_then(|path| pixels.load_image_or_svg(&path, &vector)) {
             prepared_icons.insert(icon.clone(), canopa_ui::icons::handle(image));

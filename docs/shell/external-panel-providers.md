@@ -166,6 +166,12 @@ Form content (v1 and v5 form) is a list of elements:
 | `text` | `text` |
 | `button` | `id`, `label` |
 | `selectable-list` | `id`, `entries` (`id`, `label`, optional `description`, `disabled`, `active`, `status`), optional `allow_custom` |
+
+An entry's `status` is a short, translated label the Shell shows as a badge at the
+row's end (in the accent on the `active` entry), such as "Connected"; leave it out
+when the description already says enough. Consecutive buttons share one row, and
+an `info` status reads as the panel's subtitle (its title only when it differs
+from the panel's).
 | `text-input` | `id`, `label`, `value`, optional `secret`, optional `error` |
 | `status` | `title`, `message`, `severity` (`info` or `error`) |
 
@@ -205,9 +211,19 @@ How the Shell renders it:
   their alternative text. Nothing is fetched from the network.
 - Icons are a local absolute path or theme names (`{"kind":"theme","names":[...],"theme":...,"scale":1..8}`).
 - Action hints, ignored by hosts that do not know them: `"destructive": true` for
-  an action that removes or discards something, and `"pressed": true|false` for a
-  view or setting switch. Content-level actions render as compact chips,
-  destructive ones in the danger tone and switches with an on/off switch. On an
+  an action that removes or discards something, `"pressed": true|false` for a
+  view or setting switch, `"secondary": true` for a view or settings action
+  (grouping, settings) rather than one on the content, `"primary": true` for
+  an item's main action, and `"symbol": "<icon-name>"` for a symbolic icon the
+  host may draw instead of the label (Canopa Shell draws
+  `preferences-system-symbolic`, `emblem-system-symbolic`,
+  `view-group-symbolic` and `view-refresh-symbolic`; names are ASCII letters, digits, `-`, `_` and `.`).
+  Content-level actions render as compact chips (a primary one filled with the
+  accent) in a footer below the content, secondary ones in the panel heading
+  beside Close (as round icon buttons where the shell draws their symbol, with
+  the label as tooltip; a switch keeps its label beside the icon and is accented
+  while on), destructive content actions apart at the footer's end with danger
+  text (and a danger wash under the pointer), and switches with an on/off switch. On an
   attributed item, a destructive item action becomes the card's round close
   control. Presence statuses show their labels, and their actions keep separate
   labeled controls.
@@ -278,8 +294,11 @@ for existing declarations.
   networkd for status). It follows D-Bus owner changes, including a daemon that
   appears later. `CANOPA_WIFI_PROVIDER_BACKEND=networkmanager|iwd|none` restricts
   the choice. All backend calls use zbus D-Bus clients, not `nmcli` or `iwctl`.
-- **Content.** Initial content is sent immediately (scanning state, the active
-  network if known); one scan starts when the panel opens and the Scan button
+- **Content.** With the v5 protocol the panel is rich content (a Wi-Fi switch and
+  refresh in the heading, the network in use, then **Networks**, and **Join other
+  network…**), and only the password and hidden-network prompts are forms; with
+  v1 it stays a form throughout. Initial content is sent immediately (scanning
+  state, the active network if known); one scan starts when the panel opens and the Scan button
   repeats it. Backend changes while open send full replacements. Access points with
   the same SSID and security collapse into one row. Rows are ordered active first,
   then known networks, then by signal strength, then by label.

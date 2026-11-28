@@ -158,7 +158,7 @@ Banners are Iced layer-shell surfaces that never take keyboard focus
 
 - Position is configured with `banners { position ... }` (default `bottom-start`;
   `top-start`, `top-end`, `bottom-end`), mirrored for right-to-left locales. Cards
-  are at most 360 logical pixels wide; the body preview is capped at 120 logical
+  are at most 388 logical pixels wide; the body preview is capped at 120 logical
   pixels and oversized cards scroll inside a bounded viewport
   ([ADR 0046](../notify/adr/0046-scrollable-oversized-compact-cards.md)).
 - Each card acknowledges its own first display, which starts its timeout

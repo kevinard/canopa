@@ -37,6 +37,14 @@ impl NotificationServerRequest {
         } = self;
         let (image_data, image_reference) = notification_image(&hints);
         let action_icons = bool_hint(&hints, "action-icons");
+        let expire_timeout = NotificationTimeout::from_freedesktop_expire_timeout(expire_timeout);
+        let actions = notification_actions(actions, action_icons);
+        let transient = bool_hint(&hints, "transient");
+        // A server-default timeout only hides the banner of a notification with its own
+        // actions: the sender keeps it, so the actions stay live in the Center (ADR 0056).
+        let keep_after_banner = expire_timeout == NotificationTimeout::ServerDefault
+            && !transient
+            && actions.iter().any(|action| action.key != "default");
 
         let input = NotificationInput {
             app_name,
@@ -46,19 +54,22 @@ impl NotificationServerRequest {
             summary,
             body,
             body_format: Default::default(),
-            expire_timeout: NotificationTimeout::from_freedesktop_expire_timeout(expire_timeout),
+            expire_timeout,
             urgency: urgency_hint(&hints),
-            actions: notification_actions(actions, action_icons),
+            actions,
             category: string_hint(&hints, "category"),
             progress: progress_hint(&hints),
             resident: resident_hint(&hints),
-            transient: bool_hint(&hints, "transient"),
+            transient,
             suppress_sound: bool_hint(&hints, "suppress-sound"),
             sound: sound_hint(&hints),
             requested_position: requested_position_hint(&hints),
             image_data,
             image_reference,
-            presentation: Default::default(),
+            presentation: crate::PresentationHints {
+                keep_after_banner,
+                ..Default::default()
+            },
         };
         crate::input_limits::validate_input(&input)?;
         Ok(input)
@@ -342,6 +353,36 @@ mod tests {
             input.actions[1].icon,
             NotificationVisualReference::icon_name("mail-archive")
         );
+    }
+
+    #[test]
+    fn default_timeout_keeps_notifications_with_actions_live_after_their_banner() {
+        let request = |actions: &[&str], hints: HashMap<String, OwnedValue>, timeout| {
+            NotificationServerRequest {
+                app_name: "Calendar".to_string(),
+                replaces_id: 0,
+                app_icon: String::new(),
+                summary: "Design review".to_string(),
+                body: String::new(),
+                actions: actions.iter().map(|value| value.to_string()).collect(),
+                hints,
+                expire_timeout: timeout,
+            }
+            .into_notification_input()
+            .unwrap()
+            .presentation
+            .keep_after_banner
+        };
+        let join = ["join", "Join call", "snooze", "Snooze"];
+        assert!(request(&join, HashMap::new(), -1));
+        // The application chose its own timeout, or set none at all.
+        assert!(!request(&join, HashMap::new(), 4_000));
+        assert!(!request(&join, HashMap::new(), 0));
+        // Nothing to keep live: no actions, or only the default (click) action.
+        assert!(!request(&[], HashMap::new(), -1));
+        assert!(!request(&["default", "Open"], HashMap::new(), -1));
+        let transient = HashMap::from([("transient".to_string(), OwnedValue::from(true))]);
+        assert!(!request(&join, transient, -1));
     }
 
     #[test]

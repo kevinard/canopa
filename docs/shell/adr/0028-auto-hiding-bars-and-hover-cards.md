@@ -70,6 +70,8 @@ center, float, column pin and move-to-workspace rows are removed; the
 compositor's titlebars and window bar own window management, and the hover card
 owns choosing and closing windows. This supersedes the layout rows that
 [ADR 0027](0027-niri-layout-integration.md) listed for the taskbar menu.
+[ADR 0029](0029-quit-from-the-taskbar-menu.md) adds **Quit** for a running
+application; closing one window stays with the hover card.
 
 ## Consequences
 

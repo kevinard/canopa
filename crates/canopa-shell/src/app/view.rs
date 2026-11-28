@@ -12,6 +12,10 @@ mod launcher;
 
 impl App {
     pub(crate) fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
+        super::stamp_glass(window, self.window_view(window))
+    }
+
+    fn window_view(&self, window: iced::window::Id) -> Element<'_, Message> {
         if let Some(perf) = &self.perf {
             perf.record_view(window);
         }
@@ -60,10 +64,21 @@ impl App {
             // Canopa provider documents are published by their own adapter.
             let root = (!shows_canopa_provider(&model.tree.content))
                 .then(|| window_node(Surface::Panel, window, model.title.clone()));
+            let mut presentation = self.foreground.panel_presentation(window);
+            // A provider's panel enters with its first document, not before.
+            if presentation == crate::surface::panel_motion::Presentation::Preparing
+                && matches!(
+                    model.tree.content,
+                    crate::surface::panel::PanelContent::ExternalProvider(_)
+                )
+                && model.external_content.is_none()
+            {
+                presentation = crate::surface::panel_motion::Presentation::Waiting;
+            }
             let panel = crate::surface::panel_motion::wrap(
                 canopa_ui::scroll_speed(render_panel_model(model)),
                 window,
-                self.foreground.panel_presentation(window),
+                presentation,
             );
             return match root {
                 Some(root) => semantic(root, panel),
@@ -238,7 +253,7 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     let frame = panel_frame(
         content.into(),
         text_color,
-        model.title,
+        model.heading.unwrap_or(model.title),
         model.drawer,
         model.ui,
         false,
@@ -381,10 +396,15 @@ fn styled_panel_frame<'a>(
                 if drawer && !ui.custom_radius {
                     style.border.radius = 0.0.into();
                 }
-                style
+                crate::theme::glass(style, crate::theme::Glass::Panel)
             }
         });
-    container(frame)
+    let radius = if drawer && !ui.custom_radius {
+        [canopa_theme::Pixels::ZERO; 4]
+    } else {
+        ui.radius
+    };
+    container(crate::theme::glass_region(frame, radius))
         .padding(canopa_ui::padding(ui.margin))
         .width(Length::Fill)
         .height(height)
@@ -466,20 +486,27 @@ fn render_external_panel_model<'a>(
         Length::Fill
     };
     let mut body = column![].spacing(ui.gap.px()).padding(padding);
+    let content_title = title.clone();
+    let mut buttons: Vec<Element<'_, Message>> = Vec::new();
     for (position, element) in content.elements().iter().enumerate() {
         let rendered: Element<'_, Message> = match element {
             crate::surface::panel::ExternalPanelElement::Text { text: value } => {
                 crate::theme::text(value.clone()).into()
             }
             crate::surface::panel::ExternalPanelElement::Button { id, label } => {
-                crate::theme::button(crate::theme::text(label.clone()))
-                    .on_press(Message::ExternalPanel(
+                crate::theme::action(
+                    crate::theme::strong_text(label.clone()).size(crate::theme::label_size()),
+                    Some(Message::ExternalPanel(
                         super::messages::ExternalPanelEvent::ButtonActivated {
                             provider_name: content.provider_name.clone(),
                             element_id: id.clone(),
                         },
-                    ))
-                    .into()
+                    )),
+                    canopa_ui::Action::Normal,
+                    false,
+                )
+                .padding([7, 12])
+                .into()
             }
             crate::surface::panel::ExternalPanelElement::SelectableList {
                 id,
@@ -514,39 +541,52 @@ fn render_external_panel_model<'a>(
             } => {
                 let is_error = *severity == crate::surface::panel::ExternalPanelSeverity::Error;
                 let palette = crate::theme::palette();
-                container(
-                    row![
-                        container(if is_error {
-                            crate::theme::icon(
-                                include_bytes!("../../assets/alert.svg"),
-                                20.0,
-                                palette.danger,
-                            )
-                        } else {
-                            crate::theme::strong_text("i").color(palette.accent).into()
-                        })
-                        .center(32)
-                        .style(move |_| container::Style::default()
-                            .background(if is_error {
-                                palette.danger.scale_alpha(0.12)
+                if !is_error {
+                    // Information reads as the panel's subtitle: its title only
+                    // when it says more than the panel's own.
+                    let mut lines = column![].spacing(3).width(Length::Fill);
+                    if title.trim() != content_title.trim() {
+                        lines = lines.push(crate::theme::strong_text(title.clone()));
+                    }
+                    lines = lines.push(crate::theme::text(message.clone()).style(canopa_ui::muted));
+                    container(lines).padding([0, 4]).width(Length::Fill).into()
+                } else {
+                    container(
+                        row![
+                            container(if is_error {
+                                crate::theme::icon(
+                                    include_bytes!("../../assets/alert.svg"),
+                                    20.0,
+                                    palette.danger,
+                                )
                             } else {
-                                palette.background
+                                crate::theme::strong_text("i").color(palette.accent).into()
                             })
-                            .border(iced::Border::default().rounded(9))),
-                        column![
-                            crate::theme::strong_text(title.clone()),
-                            crate::theme::text(message.clone()).style(canopa_ui::muted),
+                            .center(32)
+                            .style(move |_| {
+                                container::Style::default()
+                                    .background(if is_error {
+                                        palette.danger.scale_alpha(0.12)
+                                    } else {
+                                        palette.background
+                                    })
+                                    .border(iced::Border::default().rounded(9))
+                            }),
+                            column![
+                                crate::theme::strong_text(title.clone()),
+                                crate::theme::text(message.clone()).style(canopa_ui::muted),
+                            ]
+                            .width(Length::Fill)
+                            .spacing(5),
                         ]
-                        .width(Length::Fill)
-                        .spacing(5),
-                    ]
-                    .spacing(12)
-                    .align_y(iced::Alignment::Start),
-                )
-                .padding(14)
-                .width(Length::Fill)
-                .style(crate::theme::card)
-                .into()
+                        .spacing(12)
+                        .align_y(iced::Alignment::Start),
+                    )
+                    .padding(14)
+                    .width(Length::Fill)
+                    .style(crate::theme::card)
+                    .into()
+                }
             }
         };
         // Preserve edits and focus on the same field while replacing the
@@ -572,12 +612,23 @@ fn render_external_panel_model<'a>(
             }
             _ => rendered,
         };
-        body = body.push(external_element_semantics(
-            &content.provider_name,
-            position,
+        let rendered =
+            external_element_semantics(&content.provider_name, position, element, rendered);
+        // Consecutive buttons share one row of chips.
+        if matches!(
             element,
-            rendered,
-        ));
+            crate::surface::panel::ExternalPanelElement::Button { .. }
+        ) {
+            buttons.push(rendered);
+        } else {
+            if !buttons.is_empty() {
+                body = body.push(external_button_row(std::mem::take(&mut buttons)));
+            }
+            body = body.push(rendered);
+        }
+    }
+    if !buttons.is_empty() {
+        body = body.push(external_button_row(buttons));
     }
 
     let frame = panel_frame(
@@ -737,22 +788,33 @@ fn render_external_selectable_list<'a>(
                 let provider = provider_name.to_string();
                 let list_id = list_id.to_string();
                 let entry_id = entry.id.clone();
-                let mut row_content = column![crate::theme::text(entry.label.clone())].spacing(2);
+                let palette = crate::theme::palette();
+                let mut labels = column![crate::theme::strong_text(entry.label.clone())].spacing(2);
                 if let Some(description) = &entry.description {
-                    row_content = row_content.push(
-                        crate::theme::text(description.clone()).size(crate::theme::label_size()),
+                    labels = labels.push(
+                        crate::theme::text(description.clone())
+                            .size(crate::theme::label_size())
+                            .style(canopa_ui::muted),
                     );
                 }
+                // The entry's status is a short badge at the row's end, in the
+                // accent on the current entry.
+                let mut row_content = row![labels.width(Length::Fill)]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center);
                 if let Some(status) = &entry.status {
-                    row_content = row_content
-                        .push(crate::theme::text(status.clone()).size(crate::theme::label_size()));
+                    row_content = row_content.push(
+                        crate::theme::strong_text(status.clone())
+                            .size(crate::theme::label_size())
+                            .color(if entry.active {
+                                palette.accent
+                            } else {
+                                palette.muted
+                            })
+                            .wrapping(iced::widget::text::Wrapping::None),
+                    );
                 }
-                let border_color = if entry.active {
-                    crate::theme::palette().accent
-                } else {
-                    crate::theme::palette().border
-                };
-                let row = external_selectable_row(row_content, border_color);
+                let row = external_selectable_row(column![row_content], entry.active);
                 let mut node = Node::option(entry.label.clone(), entry.active)
                     .key(format!("{list_key}-{entry_id}"))
                     .disabled(entry.disabled);
@@ -785,7 +847,7 @@ fn render_external_selectable_list<'a>(
                         .size(crate::theme::label_size())
                 ]
                 .spacing(2);
-                let row = external_selectable_row(row_content, crate::theme::palette().accent);
+                let row = external_selectable_row(row_content, true);
                 let custom_label = fl!(
                     "shell-list-use-custom-value-named",
                     value = submitted_value.clone()
@@ -818,21 +880,42 @@ fn render_external_selectable_list<'a>(
     container(block.push(rows)).width(Length::Fill).into()
 }
 
+/// Consecutive provider buttons, as one wrapping row of chips.
+fn external_button_row<'a>(buttons: Vec<Element<'a, Message>>) -> Element<'a, Message> {
+    iced::widget::row(buttons)
+        .spacing(6)
+        .wrap()
+        .vertical_spacing(6)
+        .into()
+}
+
+/// A list row: a raised card, tinted and outlined in the accent when current.
 fn external_selectable_row<'a>(
     row_content: iced::widget::Column<'a, Message>,
-    border_color: iced::Color,
+    current: bool,
 ) -> iced::widget::Container<'a, Message> {
     container(row_content)
-        .padding([8, 10])
+        .padding([10, 12])
         .width(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::palette().raised)),
-            border: iced::Border {
-                color: border_color,
-                width: 1.0,
-                radius: iced::border::Radius::from(4.0),
-            },
-            ..Default::default()
+        .style(move |_| {
+            let palette = crate::theme::palette();
+            iced::widget::container::Style {
+                background: Some(iced::Background::Color(if current {
+                    crate::theme::accent_surface()
+                } else {
+                    palette.raised
+                })),
+                border: iced::Border {
+                    color: if current {
+                        palette.accent.scale_alpha(0.6)
+                    } else {
+                        iced::Color::TRANSPARENT
+                    },
+                    width: if current { 1.0 } else { 0.0 },
+                    radius: iced::border::Radius::from(12.0),
+                },
+                ..Default::default()
+            }
         })
 }
 
@@ -989,15 +1072,24 @@ fn render_menu_scroll<'a>(model: &PanelRenderModel<'a>, height: Length) -> Eleme
         },
     });
     let entry_count = model.menu_entries.len();
+    // Launcher sections add a heading above the first row of each later group.
+    let sections = if is_launcher {
+        super::launcher::section_starts(&model.menu_entries)
+    } else {
+        Vec::new()
+    };
+    let heading = super::launcher::SECTION_HEADING_HEIGHT;
+    let headings_before = |index: usize| sections.iter().filter(|start| **start < index).count();
     let range = super::panel_sizing::menu_render_range(
         entry_count,
-        model.menu_scroll_y,
+        (model.menu_scroll_y - heading * sections.len() as f32).max(0.0),
         model.menu_viewport_height,
         metrics.extent,
     );
     let (start, end) = (range.start, range.end);
-    let top_spacer = start as f32 * metrics.extent;
-    let bottom_spacer = entry_count.saturating_sub(end) as f32 * metrics.extent;
+    let top_spacer = start as f32 * metrics.extent + headings_before(start) as f32 * heading;
+    let bottom_spacer = entry_count.saturating_sub(end) as f32 * metrics.extent
+        + (sections.len() - headings_before(end)) as f32 * heading;
 
     if top_spacer > 0.0 {
         // The column supplies the gap between a spacer and its adjacent row.
@@ -1009,6 +1101,13 @@ fn render_menu_scroll<'a>(model: &PanelRenderModel<'a>, height: Length) -> Eleme
     }
 
     for index in start..end {
+        if sections.contains(&index)
+            && let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) =
+                &model.menu_entries[index].target
+            && let Some(section) = target.section
+        {
+            list = list.push(launcher::section_heading(section.label(), menu_row_gap));
+        }
         list = list.push(render_menu_row(model, index));
     }
 
@@ -1034,9 +1133,16 @@ fn render_menu_scroll<'a>(model: &PanelRenderModel<'a>, height: Length) -> Eleme
                 use iced::widget::scrollable;
                 let mut style = scrollable::default(theme, status);
                 let palette = canopa_ui::colors(theme);
-                style.vertical_rail.background = Some(palette.muted.scale_alpha(0.10).into());
+                // A quiet thumb at rest, with no track; the track and a
+                // brighter thumb appear under the pointer.
+                let engaged = !matches!(status, scrollable::Status::Active { .. });
+                style.vertical_rail.background =
+                    engaged.then(|| palette.muted.scale_alpha(0.10).into());
                 style.vertical_rail.border.radius = 3.0.into();
-                style.vertical_rail.scroller.background = palette.muted.scale_alpha(0.64).into();
+                style.vertical_rail.scroller.background = palette
+                    .muted
+                    .scale_alpha(if engaged { 0.70 } else { 0.45 })
+                    .into();
                 style
             });
     }
@@ -1342,13 +1448,19 @@ fn render_bar_model<'a>(
     } else {
         content
     };
-    let bar = mouse_area(
+    let bar = mouse_area(crate::theme::glass_region(
         container(content)
             .width(frame.width)
             .height(frame.height)
             .clip(true)
-            .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui)),
-    )
+            .style(move |_| {
+                crate::theme::glass(
+                    canopa_ui::frame(&crate::theme::appearance(), ui),
+                    crate::theme::Glass::Bar,
+                )
+            }),
+        ui.radius,
+    ))
     .on_press(Message::Surface(super::messages::SurfaceEvent::BarClick(
         window,
     )))
@@ -1577,6 +1689,7 @@ mod tests {
                         icon_name: None,
                         children: vec![],
                         is_separator: false,
+                        emphasis: Default::default(),
                         toggle: None,
                     }],
                     anchor: (0, 0),

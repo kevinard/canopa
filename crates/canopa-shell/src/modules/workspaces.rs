@@ -1,6 +1,111 @@
 use crate::theme;
 use crate::theme::bar_metrics::ICON_SIZE;
 
+/// The menu service of workspace menus. Like the taskbar's, it is not a D-Bus
+/// bus name, so it never reaches a tray item.
+pub(crate) const MENU_SERVICE: &str = "canopa-shell/workspaces";
+/// The object path the menu popup records for a workspace menu.
+pub(crate) const MENU_PATH: &str = "/workspaces";
+
+/// A workspace pill's menu and the rename prompt it opens.
+#[derive(Debug, Clone)]
+pub enum WorkspaceEvent {
+    /// Open the menu of workspace `id` beside its pill on `window`.
+    Menu {
+        id: u64,
+        module: crate::modules::ModuleId,
+        window: iced::window::Id,
+    },
+    MenuAt {
+        id: u64,
+        window: iced::window::Id,
+        bounds: Option<iced::Rectangle>,
+    },
+    /// The rename prompt answered: a new name, an empty one to go back to the
+    /// numbered name, or nothing when it was dismissed.
+    Renamed {
+        id: u64,
+        response: Option<crate::ipc::protocol::IpcResponse>,
+    },
+}
+
+/// One command in a workspace's menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MenuCommand {
+    /// The workspace's name heading the menu; choosing it does nothing.
+    Heading,
+    Rename,
+    MoveUp,
+    MoveDown,
+}
+
+/// A row of the menu: its label, command and whether it can be chosen; `None`
+/// is a separator.
+pub(crate) type MenuRow = Option<(String, MenuCommand, bool)>;
+
+/// What a workspace is called: its name, or "Workspace" and its number.
+pub(crate) fn workspace_title(workspace: &niri_ipc::Workspace) -> String {
+    workspace
+        .name
+        .clone()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| fl!("shell-workspace-numbered", number = workspace.idx))
+}
+
+/// The menu of a workspace that is `position` (0-based) of `count` on its
+/// output: its title, Rename…, then Move up and Move down where it can move.
+pub(crate) fn menu(workspace: &niri_ipc::Workspace, position: usize, count: usize) -> Vec<MenuRow> {
+    vec![
+        Some((workspace_title(workspace), MenuCommand::Heading, false)),
+        None,
+        Some((fl!("shell-workspace-rename"), MenuCommand::Rename, true)),
+        Some((
+            fl!("shell-workspace-move-up"),
+            MenuCommand::MoveUp,
+            position > 0,
+        )),
+        Some((
+            fl!("shell-workspace-move-down"),
+            MenuCommand::MoveDown,
+            position + 1 < count,
+        )),
+    ]
+}
+
+/// The menu popup's tree for `rows`; item ids are the row positions.
+pub(crate) fn menu_tree(
+    rows: &[MenuRow],
+    anchor: (i32, i32),
+    screen_size: (u32, u32),
+) -> crate::surface::menu_popup::MenuTree {
+    use crate::surface::menu_popup::{MenuEmphasis, MenuItem, MenuTree};
+    MenuTree {
+        items: rows
+            .iter()
+            .enumerate()
+            .map(|(position, row)| MenuItem {
+                id: position.to_string(),
+                label: row
+                    .as_ref()
+                    .map(|(label, _, _)| label.clone())
+                    .unwrap_or_default(),
+                enabled: row.as_ref().is_some_and(|(_, _, enabled)| *enabled),
+                visible: true,
+                icon_name: None,
+                children: Vec::new(),
+                is_separator: row.is_none(),
+                emphasis: match row {
+                    Some((_, MenuCommand::Heading, _)) => MenuEmphasis::Heading,
+                    _ => MenuEmphasis::Normal,
+                },
+                toggle: None,
+            })
+            .collect(),
+        anchor,
+        screen_size,
+    }
+}
+
 /// Returns `(background, foreground)` colours for a workspace pill.
 ///
 /// Focused workspace: accent background with base-coloured text.
@@ -25,7 +130,7 @@ fn pill_border(is_focused: bool, is_active: bool) -> iced::Border {
             iced::Color::TRANSPARENT
         },
         width: 1.0,
-        radius: 10.0.into(),
+        radius: 14.0.into(),
     }
 }
 
@@ -141,12 +246,11 @@ impl WorkspaceItemModule {
             }
         }
         let mut border = pill_border(self.workspace.is_focused, self.workspace.is_active);
-        // Fill grades the states: accent for the focused workspace, a filled
-        // pill when occupied, an outline when empty.
+        // Fill grades the states: accent for the focused workspace, a soft
+        // pill when occupied, and a faint one when empty.
         if !self.workspace.is_focused && self.workspace.active_window_id.is_none() {
-            bg = iced::Color::TRANSPARENT;
-            border.color = theme::palette().text.scale_alpha(0.16);
-            border.width = border.width.max(1.0);
+            bg = theme::palette().text.scale_alpha(0.08);
+            border.color = iced::Color::TRANSPARENT;
         }
         let ws_num = self.workspace.idx as u32;
         let label_cfg = self.config.workspaces.get(&ws_num);
@@ -275,13 +379,17 @@ impl WorkspaceItemModule {
                 ));
             }
 
-            container(
+            let pill = container(
                 iced::widget::row(parts)
                     .spacing(4)
                     .align_y(Alignment::Center),
             )
-            .width(Length::Fill)
-            .height(30)
+            .width(if label_str.is_some() {
+                Length::Fill
+            } else {
+                Length::Fixed(40.0)
+            })
+            .height(28)
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
             .padding([0, 6])
@@ -289,8 +397,11 @@ impl WorkspaceItemModule {
                 background: Some(Background::Color(bg)),
                 border,
                 ..Default::default()
-            })
-            .into()
+            });
+            container(pill)
+                .width(Length::Fill)
+                .align_x(Alignment::Center)
+                .into()
         }
     }
 
@@ -315,12 +426,11 @@ impl WorkspaceItemModule {
             }
         }
         let mut border = pill_border(self.workspace.is_focused, self.workspace.is_active);
-        // Fill grades the states: accent for the focused workspace, a filled
-        // pill when occupied, an outline when empty.
+        // Fill grades the states: accent for the focused workspace, a soft
+        // pill when occupied, and a faint one when empty.
         if !self.workspace.is_focused && self.workspace.active_window_id.is_none() {
-            bg = iced::Color::TRANSPARENT;
-            border.color = theme::palette().text.scale_alpha(0.16);
-            border.width = border.width.max(1.0);
+            bg = theme::palette().text.scale_alpha(0.08);
+            border.color = iced::Color::TRANSPARENT;
         }
         let mode = if horizontal {
             crate::config::FormatMode::Horizontal
@@ -485,6 +595,24 @@ impl crate::modules::interaction::ModuleInteractionHandler for WorkspaceItemModu
                 })
             }
             _ => None,
+        }
+    }
+
+    fn on_interaction_in_window(
+        &self,
+        event: crate::modules::InteractionEvent,
+        window: iced::window::Id,
+    ) -> Option<crate::app::Message> {
+        match event {
+            // A pill's menu renames or moves its workspace.
+            crate::modules::InteractionEvent::RightClicked(_) => {
+                Some(crate::app::Message::Workspaces(WorkspaceEvent::Menu {
+                    id: self.workspace.id,
+                    module: self.id.clone(),
+                    window,
+                }))
+            }
+            event => self.on_interaction(event),
         }
     }
 }

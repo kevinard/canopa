@@ -258,6 +258,7 @@ fn provider_replacement_during_entry_reveals_new_controls_in_the_same_window() {
         window,
         &crate::config::Edge::Left,
         crate::config::PanelAnimationConfig::default(),
+        None,
     );
     app.foreground.panel_motion_ready(window, 1.0);
     assert!(matches!(

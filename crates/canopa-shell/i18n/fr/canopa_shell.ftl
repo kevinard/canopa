@@ -3,9 +3,9 @@
 
 ## Panel titles
 
+shell-panel-calendar = Calendrier
 shell-panel-overview = Vue d’ensemble
 shell-panel-quick-settings = Réglages rapides
-shell-panel-calendar = Calendrier
 shell-panel-sound = Son
 shell-panel-network = Réseau
 shell-panel-notifications = Notifications
@@ -25,7 +25,7 @@ shell-module-controls = Réglages
 shell-module-bluetooth = Bluetooth
 shell-module-power-and-display = Alimentation et écran
 shell-provider-bluetooth-description = Appareils et association
-shell-bluetooth-on = Activé, aucun appareil connecté
+shell-bluetooth-on = Aucun appareil
 shell-bluetooth-connected-count = { $count } appareils connectés
 shell-provider-power-description = Batterie, mode d’alimentation et luminosité
 shell-provider-wifi-description = Réseaux Wi-Fi et connexions
@@ -35,6 +35,7 @@ shell-battery-charging = En charge
 shell-battery-full = Complètement chargée
 shell-battery-plugged-in = Branchée, pas en charge
 shell-battery-on-battery = Sur batterie
+shell-battery-summary = Batterie { $percent } · { $state }
 shell-module-lock = Verrouiller
 shell-module-suspend = Mettre en veille
 shell-module-hibernate = Hiberner
@@ -49,7 +50,7 @@ shell-tooltip-workspace = Espace de travail { $index }
 
 ## Built-in menus (config/default.kdl `title-id`, `prompt-id`, `label-id`)
 
-shell-menu-launcher-prompt = Rechercher des applications, des fichiers et plus
+shell-menu-launcher-prompt = Applications, fichiers… ou calculez 12 × 3
 shell-menu-log-out-title = Se déconnecter ?
 shell-menu-reboot-title = Redémarrer ?
 shell-menu-power-off-title = Éteindre ?
@@ -69,6 +70,20 @@ shell-calendar-today = Aujourd’hui
 shell-calendar-today-cell = Aujourd’hui, { $date }
 shell-calendar-previous-month = Mois précédent
 shell-calendar-next-month = Mois suivant
+shell-calendar-week = Semaine { $number }
+shell-calendar-upcoming = À venir
+shell-calendar-no-events = Rien de prévu cette semaine
+shell-calendar-no-events-day = Rien de prévu
+shell-calendar-now = En cours
+shell-calendar-in-minutes = Dans { $minutes } min
+shell-calendar-fewer-events = Afficher moins
+shell-calendar-more-events = { $count ->
+    [one] 1 autre événement à venir
+   *[other] { $count } autres événements à venir
+}
+shell-calendar-all-day = Toute la journée
+shell-calendar-tomorrow = Demain
+shell-calendar-ends-next-day = { $time } le lendemain
 
 ## Shared control words
 
@@ -129,12 +144,12 @@ shell-network-wifi = Wi-Fi
 shell-network-wired = Filaire
 shell-network-vpn = VPN
 shell-network-network = Réseau
-shell-network-online = connecté à Internet
-shell-network-limited = connexion limitée
-shell-network-offline = hors ligne
-shell-network-unknown = état inconnu
-shell-network-connected = connecté
-shell-network-portal = connexion au portail requise
+shell-network-online = Connecté
+shell-network-limited = Connexion limitée
+shell-network-offline = Hors ligne
+shell-network-unknown = État inconnu
+shell-network-connected = Connecté
+shell-network-portal = Connexion au portail requise
 shell-network-with-vpn = { $description } · VPN : { $vpn }
 shell-network-status-unavailable = État du réseau indisponible
 shell-volume-sound = Son
@@ -219,6 +234,14 @@ shell-taskbar-open = Ouvrir
 shell-taskbar-new-window = Nouvelle fenêtre
 shell-taskbar-pin = Épingler à la barre des tâches
 shell-taskbar-unpin = Détacher de la barre des tâches
+shell-taskbar-quit = Quitter
+shell-workspace-numbered = Espace de travail { $number }
+shell-workspace-rename = Renommer…
+shell-workspace-move-up = Monter
+shell-workspace-move-down = Descendre
+shell-workspace-rename-prompt = Renommer « { $name } »
+shell-workspace-rename-default = Revenir au nom numéroté
+shell-taskbar-quit-windows = Quitter · fermer { $count } fenêtres
 shell-taskbar-scratchpad = Bloc-notes de fenêtres
 shell-hover-card-more-windows = { $count ->
     [one] 1 autre fenêtre
@@ -355,22 +378,34 @@ shell-wifi-error-connection-failed = La connexion a échoué.
 shell-wifi-error-credential-rejected = L’identifiant du réseau a été refusé.
 shell-wifi-error-unsupported = Ce réseau Wi-Fi n’est pas pris en charge.
 shell-wifi-error-authorization-required = Une autorisation est requise pour le Wi-Fi.
-shell-wifi-network-description = { $known ->
-        [yes] connu, { $security ->
-            [open] ouvert
-            [enterprise] entreprise
-           *[secured] sécurisé
-        }, { $signal }
-       *[no] { $security ->
-            [open] ouvert
-            [enterprise] entreprise
-           *[secured] sécurisé
-        }, { $signal }
-    }
+shell-wifi-cancel = Annuler
+shell-wifi-join = Rejoindre
+shell-wifi-join-other = Rejoindre un autre réseau
+shell-wifi-join-other-action = Rejoindre un autre réseau…
+shell-wifi-join-other-prompt = Saisissez le nom d’un réseau masqué.
+shell-wifi-network-name = Nom du réseau
+shell-wifi-networks = Réseaux
+shell-wifi-off-hint = Activez le Wi-Fi pour voir les réseaux.
+shell-wifi-forget-action = Oublier
+shell-wifi-saved = Enregistré
+shell-wifi-security-open = Ouvert
+shell-wifi-security-secured = Sécurisé
+shell-wifi-security-enterprise = Entreprise
+shell-wifi-signal = Signal { $signal }
+shell-wifi-status-connected = Connecté
+shell-wifi-status-connecting = Connexion…
+shell-wifi-status-failed = Échec de la connexion
 
 ## Bluetooth panel
 
 shell-bluetooth-title = Bluetooth
+shell-bluetooth-visible-as = Activé · Visible comme « { $name } »
+shell-bluetooth-my-devices = Mes appareils
+shell-bluetooth-other-devices = Autres appareils
+shell-bluetooth-not-connected = Non connecté
+shell-bluetooth-battery = Batterie { $level }
+shell-bluetooth-no-paired = Aucun appareil associé
+shell-bluetooth-no-paired-hint = Choisissez « Rechercher des périphériques » pour en associer un.
 shell-bluetooth-no-adapters = Aucun adaptateur Bluetooth trouvé.
 shell-bluetooth-unavailable = Le service Bluetooth est indisponible.
 shell-bluetooth-searching = Recherche de périphériques…
@@ -445,12 +480,18 @@ shell-launcher-clear = Effacer
 shell-launcher-clear-search = Effacer la recherche
 shell-launcher-clear-search-hint = Effacer la recherche · { $key }
 shell-launcher-calculator = Calculatrice
-shell-launcher-calculate-try = Essayez
-shell-launcher-calculate-or = ou
 shell-launcher-select = Sélectionner
 shell-launcher-installed-apps = Applications installées
 shell-launcher-browse = Parcourir
 shell-launcher-results = Résultats
+shell-launcher-home-folder = Dossier personnel
+shell-launcher-section-pinned = Épinglées
+shell-launcher-section-recent = Récentes
+shell-launcher-section-all-apps = Toutes les applications
+shell-launcher-section-windows = Fenêtres
+shell-launcher-section-apps = Applications
+shell-launcher-section-files = Fichiers
+shell-launcher-section-settings = Paramètres
 shell-launcher-actions = Actions
 shell-launcher-actions-for = Actions pour { $name }
 shell-launcher-open = Ouvrir
@@ -485,7 +526,6 @@ shell-launcher-matched-keywords = Correspond aux mots-clés de l’application
 shell-launcher-approximate-match = Correspondance approximative des mots-clés
 shell-launcher-open-with-path = Ouvrir avec · { $path }
 shell-launcher-open-with-file = Ouvrir avec — { $file }
-shell-launcher-recent = Récent
 shell-launcher-filter-actions = Filtrer les actions
 shell-launcher-filter-applications = Filtrer les applications
 shell-launcher-snippet-name = Nom de l’extrait
@@ -540,7 +580,8 @@ shell-window-workspace-on-output = Espace de travail { $workspace } · { $output
 shell-window-workspace-unavailable = Espace de travail indisponible
 shell-window-switch = Basculer vers la fenêtre
 shell-window-launch-application = Lancer l’application
-shell-window-description = Fenêtre · { $application } · { $workspace }
+shell-window-description = Fenêtre · { $workspace } · { $application }
+shell-window-description-place = Fenêtre · { $workspace }
 shell-files-index-partial = L’index des fichiers est partiel (limite d’analyse atteinte)
 shell-files-locations-unreadable = Certains emplacements de recherche n’ont pas pu être lus
 shell-files-top-matches = Affichage des fichiers les mieux classés.

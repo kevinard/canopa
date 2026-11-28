@@ -345,6 +345,8 @@ impl crate::modules::render::ModuleRender for VolumeModule {
                 heading,
                 canopa_ui::direction::row([
                     semantic(mute_node, mute),
+                    // The slider names what it sets, apart from the card's device.
+                    crate::modules::view::level_label(fl!("shell-osd-volume")),
                     semantic(slider_node, slider),
                     iced::widget::container(
                         crate::theme::strong_text(level)

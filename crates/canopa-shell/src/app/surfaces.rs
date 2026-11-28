@@ -109,7 +109,7 @@ pub(super) fn tooltip_popup_window_settings(
         anchor: crate::surface::placement::layer_anchor(&tree.bar_edge),
         exclusive_zone: Some(0),
         size: Some(size),
-        margin: Some(tooltip_margin(tree, size, 4)),
+        margin: Some(tooltip_margin(tree, size, 8)),
         layer: iced_layershell::reexport::Layer::Overlay,
         keyboard_interactivity: KeyboardInteractivity::None,
         ..Default::default()
@@ -204,7 +204,6 @@ impl SurfaceManager {
             .map(BarSurfaceIdentity::from_surface_state)
     }
 
-    #[cfg(test)]
     pub(super) fn surfaces(&self) -> impl Iterator<Item = (&iced::window::Id, &SurfaceState)> {
         self.surfaces.iter()
     }
@@ -512,8 +511,17 @@ impl App {
                 width,
                 height,
             } => {
-                self.surfaces.surface_mut(window).screen_size = (width, height);
-                self.drawer_bar_input_region(window)
+                let surface = self.surfaces.surface_mut(window);
+                let resized = surface.screen_size != (width, height);
+                surface.screen_size = (width, height);
+                let region = self.drawer_bar_input_region(window);
+                if resized {
+                    // A bar resizes with its output, or with its own settings:
+                    // the minimap's scale and screen frame follow both.
+                    Task::batch([region, self.refresh_niri_output_sizes()])
+                } else {
+                    region
+                }
             }
             SurfaceInputEffect::BarWindowClosed(window) => {
                 let effects = self.surfaces.retire_bar_surface(window);
@@ -857,6 +865,7 @@ impl App {
             placement.anchor = (center.x.round() as i32, center.y.round() as i32);
         }
         let request = self.capture_card_previews(&card);
+        let workspace_card = matches!(card, crate::surface::hover_card::HoverCard::Workspace(_));
         let tree = crate::surface::tooltip_popup::TooltipTree {
             segments: Vec::new(),
             card: Some(card),
@@ -871,6 +880,11 @@ impl App {
             tree,
         }]);
         tasks.push(request);
+        if workspace_card {
+            // The frame marks what is on screen: measure the screen as it is
+            // now, since Niri does not announce a resized output.
+            tasks.push(self.refresh_niri_output_sizes());
+        }
         Task::batch(tasks)
     }
 
@@ -1731,7 +1745,7 @@ mod tests {
                 Edge::Right => right,
             };
             assert_eq!(
-                distance, 4,
+                distance, 8,
                 "only the tooltip gap is added to the reserved area"
             );
         }
@@ -1742,9 +1756,9 @@ mod tests {
         let tree = tooltip_tree(crate::config::Edge::Left);
         let settings = tooltip_popup_window_settings(&tree);
 
-        assert_eq!(settings.size, Some((32, 42)));
+        assert_eq!(settings.size, Some((32, 36)));
         assert_eq!(settings.anchor, Anchor::Left | Anchor::Top);
-        assert_eq!(settings.margin, Some((479, 0, 0, 4)));
+        assert_eq!(settings.margin, Some((482, 0, 0, 8)));
     }
 
     #[test]
@@ -1753,7 +1767,7 @@ mod tests {
         let settings = tooltip_popup_window_settings(&tree);
 
         assert_eq!(settings.anchor, Anchor::Right | Anchor::Top);
-        assert_eq!(settings.margin, Some((479, 4, 0, 0)));
+        assert_eq!(settings.margin, Some((482, 8, 0, 0)));
     }
 
     #[test]

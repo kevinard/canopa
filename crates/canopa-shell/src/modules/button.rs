@@ -242,15 +242,24 @@ impl ButtonModule {
             .width(18)
             .height(18)
             .style(|theme: &iced::Theme, _| iced::widget::svg::Style {
-                color: Some(canopa_ui::colors(theme).muted),
+                color: Some(canopa_ui::colors(theme).text),
             }),
         )
         .center_x(32)
-        .center_y(32);
+        .center_y(32)
+        // The same round chip as the sound row's mute button.
+        .style(|theme| {
+            iced::widget::container::Style::default()
+                .background(canopa_ui::colors(theme).text.scale_alpha(0.07))
+                .border(iced::Border::default().rounded(16))
+        });
         iced::widget::column![
             heading,
             canopa_ui::direction::row([
                 glyph.into(),
+                // The slider names what it sets, apart from the battery level
+                // on the line above.
+                crate::modules::view::level_label(fl!("shell-osd-brightness")),
                 semantic(node, slider),
                 iced::widget::container(
                     crate::theme::strong_text(text)

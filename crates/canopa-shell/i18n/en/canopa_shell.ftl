@@ -3,9 +3,9 @@
 ## Panel titles
 
 # Heading of the bar panel when the configuration gives no title.
+shell-panel-calendar = Calendar
 shell-panel-overview = Overview
 shell-panel-quick-settings = Quick settings
-shell-panel-calendar = Calendar
 shell-panel-sound = Sound
 shell-panel-network = Network
 shell-panel-notifications = Notifications
@@ -26,7 +26,7 @@ shell-module-controls = Controls
 shell-module-bluetooth = Bluetooth
 shell-module-power-and-display = Power & display
 shell-provider-bluetooth-description = Devices and pairing
-shell-bluetooth-on = On, no devices connected
+shell-bluetooth-on = No devices
 shell-bluetooth-connected-count = { $count } devices connected
 shell-provider-power-description = Battery, power mode and brightness
 shell-provider-wifi-description = Wi-Fi networks and connections
@@ -36,6 +36,7 @@ shell-battery-charging = Charging
 shell-battery-full = Fully charged
 shell-battery-plugged-in = Plugged in, not charging
 shell-battery-on-battery = On battery power
+shell-battery-summary = Battery { $percent } · { $state }
 shell-module-lock = Lock
 shell-module-suspend = Suspend
 shell-module-hibernate = Hibernate
@@ -52,7 +53,7 @@ shell-tooltip-workspace = Workspace { $index }
 ## Built-in menus (config/default.kdl `title-id`, `prompt-id`, `label-id`)
 
 # Placeholder of the launcher's search field.
-shell-menu-launcher-prompt = Search apps, files, and more
+shell-menu-launcher-prompt = Search apps and files, or calculate 12 × 3
 shell-menu-log-out-title = Log out?
 shell-menu-reboot-title = Reboot?
 shell-menu-power-off-title = Power off?
@@ -74,6 +75,20 @@ shell-calendar-today = Today
 shell-calendar-today-cell = Today, { $date }
 shell-calendar-previous-month = Previous month
 shell-calendar-next-month = Next month
+shell-calendar-week = Week { $number }
+shell-calendar-upcoming = Upcoming
+shell-calendar-no-events = Nothing scheduled this week
+shell-calendar-no-events-day = Nothing scheduled
+shell-calendar-now = Now
+shell-calendar-in-minutes = In { $minutes } min
+shell-calendar-fewer-events = Show fewer
+shell-calendar-more-events = { $count ->
+    [one] 1 more upcoming event
+   *[other] { $count } more upcoming events
+}
+shell-calendar-all-day = All day
+shell-calendar-tomorrow = Tomorrow
+shell-calendar-ends-next-day = { $time } next day
 
 ## Shared control words
 
@@ -143,12 +158,12 @@ shell-network-wired = Wired
 shell-network-vpn = VPN
 shell-network-network = Network
 # Connectivity, shown as the network {label} when no connection name is known.
-shell-network-online = online
-shell-network-limited = limited
-shell-network-offline = offline
-shell-network-unknown = unknown
-shell-network-connected = connected
-shell-network-portal = sign-in required
+shell-network-online = Connected
+shell-network-limited = Limited connection
+shell-network-offline = Offline
+shell-network-unknown = Unknown
+shell-network-connected = Connected
+shell-network-portal = Sign-in required
 # $vpn lists the active VPN names.
 shell-network-with-vpn = { $description } · VPN: { $vpn }
 shell-network-status-unavailable = Network status unavailable
@@ -241,6 +256,14 @@ shell-taskbar-open = Open
 shell-taskbar-new-window = New window
 shell-taskbar-pin = Pin to taskbar
 shell-taskbar-unpin = Unpin from taskbar
+shell-taskbar-quit = Quit
+shell-workspace-numbered = Workspace { $number }
+shell-workspace-rename = Rename…
+shell-workspace-move-up = Move up
+shell-workspace-move-down = Move down
+shell-workspace-rename-prompt = Rename “{ $name }”
+shell-workspace-rename-default = Use the numbered name
+shell-taskbar-quit-windows = Quit · close { $count } windows
 shell-taskbar-scratchpad = Scratchpad
 shell-hover-card-more-windows = { $count ->
     [one] 1 more window
@@ -384,22 +407,34 @@ shell-wifi-error-unsupported = This Wi-Fi network is not supported.
 shell-wifi-error-authorization-required = Wi-Fi authorization is required.
 # A network row's description: $known is yes or no, $security is open,
 # secured or enterprise, $signal a formatted percentage.
-shell-wifi-network-description = { $known ->
-        [yes] known { $security ->
-            [open] open
-            [enterprise] enterprise
-           *[secured] secured
-        } { $signal }
-       *[no] { $security ->
-            [open] open
-            [enterprise] enterprise
-           *[secured] secured
-        } { $signal }
-    }
+shell-wifi-cancel = Cancel
+shell-wifi-join = Join
+shell-wifi-join-other = Join other network
+shell-wifi-join-other-action = Join other network…
+shell-wifi-join-other-prompt = Enter the name of a hidden network.
+shell-wifi-network-name = Network name
+shell-wifi-networks = Networks
+shell-wifi-off-hint = Turn Wi-Fi on to see networks.
+shell-wifi-forget-action = Forget
+shell-wifi-saved = Saved
+shell-wifi-security-open = Open
+shell-wifi-security-secured = Secured
+shell-wifi-security-enterprise = Enterprise
+shell-wifi-signal = Signal { $signal }
+shell-wifi-status-connected = Connected
+shell-wifi-status-connecting = Connecting…
+shell-wifi-status-failed = Couldn’t connect
 
 ## Bluetooth panel
 
 shell-bluetooth-title = Bluetooth
+shell-bluetooth-visible-as = On · Visible as “{ $name }”
+shell-bluetooth-my-devices = My devices
+shell-bluetooth-other-devices = Other devices
+shell-bluetooth-not-connected = Not connected
+shell-bluetooth-battery = Battery { $level }
+shell-bluetooth-no-paired = No paired devices
+shell-bluetooth-no-paired-hint = Choose “Find devices” to pair one.
 shell-bluetooth-no-adapters = No Bluetooth adapters found.
 shell-bluetooth-unavailable = Bluetooth service is unavailable.
 shell-bluetooth-searching = Searching for devices…
@@ -481,12 +516,18 @@ shell-launcher-clear-search-hint = Clear search · { $key }
 shell-launcher-calculator = Calculator
 # Beside two example key caps: "Try [12 × 3] or [5 km to mi]". Calculations
 # need no prefix; the conversion example stays in the English unit grammar.
-shell-launcher-calculate-try = Try
-shell-launcher-calculate-or = or
 shell-launcher-select = Select
 shell-launcher-installed-apps = Installed apps
 shell-launcher-browse = Browse
 shell-launcher-results = Results
+shell-launcher-home-folder = Home
+shell-launcher-section-pinned = Pinned
+shell-launcher-section-recent = Recent
+shell-launcher-section-all-apps = All apps
+shell-launcher-section-windows = Windows
+shell-launcher-section-apps = Apps
+shell-launcher-section-files = Files
+shell-launcher-section-settings = Settings
 shell-launcher-actions = Actions
 # $name is the result's name.
 shell-launcher-actions-for = Actions for { $name }
@@ -522,7 +563,6 @@ shell-launcher-approximate-match = Approximate keyword match
 # $path is the file to open.
 shell-launcher-open-with-path = Open with · { $path }
 shell-launcher-open-with-file = Open with — { $file }
-shell-launcher-recent = Recent
 shell-launcher-filter-actions = Filter actions
 shell-launcher-filter-applications = Filter applications
 shell-launcher-snippet-name = Snippet name
@@ -581,7 +621,8 @@ shell-window-workspace-on-output = Workspace { $workspace } · { $output }
 shell-window-workspace-unavailable = Workspace unavailable
 shell-window-switch = Switch to window
 shell-window-launch-application = Launch application
-shell-window-description = Window · { $application } · { $workspace }
+shell-window-description = Window · { $workspace } · { $application }
+shell-window-description-place = Window · { $workspace }
 shell-files-index-partial = File index is partial (scan limit reached)
 shell-files-locations-unreadable = Some search locations could not be read
 shell-files-top-matches = Showing the highest-ranked file matches.

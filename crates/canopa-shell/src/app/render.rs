@@ -47,6 +47,8 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) ui: canopa_theme::ResolvedStyle,
     pub(super) menu_metrics: crate::theme::MenuMetrics,
     pub(super) title: String,
+    /// The visible heading, when it differs from the window's name.
+    pub(super) heading: Option<String>,
     pub(super) drawer: bool,
     pub(super) adaptive: bool,
     pub(super) compact_at_end: bool,
@@ -306,10 +308,29 @@ impl App {
                             crate::config::PanelAction::Command(_)
                             | crate::config::PanelAction::Session(_)
                             | crate::config::PanelAction::Compositor(_))))));
+        let layout = self.effective_module_layout_for_bar(bar);
         let compact_at_end = !bar.edge.is_horizontal()
-            && matches!(&tree.origin, crate::surface::panel::PanelOrigin::Module(origin)
-                if self.effective_module_layout_for_bar(bar).iter().any(|(zone, id)|
-                    *zone == Zone::End && id == origin));
+            && match &tree.origin {
+                crate::surface::panel::PanelOrigin::Module(origin) => layout
+                    .iter()
+                    .any(|(zone, id)| *zone == Zone::End && id == origin),
+                // Quick settings opened from a key or the bar itself sits by
+                // the status group that also opens it.
+                _ => {
+                    matches!(tree.content, crate::surface::panel::PanelContent::BarPanel)
+                        && layout.iter().any(|(zone, id)| {
+                            *zone == Zone::End
+                                && matches!(
+                                    self.modules.kind_for(id),
+                                    Some(
+                                        ModuleKind::Network
+                                            | ModuleKind::Volume
+                                            | ModuleKind::Battery
+                                    )
+                                )
+                        })
+                }
+            };
 
         let title = {
             use crate::surface::panel::PanelContent;
@@ -367,10 +388,24 @@ impl App {
             .filter(|session| !session.in_child())
             .and_then(|session| session.quick_scope_selection().0);
 
+        // The calendar shows today's date as its heading; the window keeps its name.
+        let heading = match &tree.content {
+            crate::surface::panel::PanelContent::ModulePanel(id)
+                if self.modules.kind_for(id) == Some(ModuleKind::Clock) =>
+            {
+                Some(canopa_i18n::format::weekday_month_day_with(
+                    chrono::Local::now().date_naive(),
+                    canopa_i18n::format::Length::Long,
+                ))
+            }
+            _ => None,
+        };
+
         Some(PanelRenderModel {
             ui,
             menu_metrics: self.panel_menu_metrics(tree),
             title,
+            heading,
             drawer: bar.uses_drawer_for(&tree.content),
             adaptive,
             compact_at_end,
@@ -445,6 +480,9 @@ impl App {
             }
             let hovered = !panel_open && surface.hovered_module.as_ref() == Some(&id);
             let focused = !panel_open && surface.focused_module.as_ref() == Some(&id);
+            // The ring marks keyboard navigation only, not focus the compositor
+            // returned to the bar (after a panel closes, say).
+            let focus_ring = focused && surface.focus_visible;
             let active = self.foreground.active_panel_origin_for(window)
                 == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()))
                 || self
@@ -483,9 +521,9 @@ impl App {
             let mut overrides =
                 self.config.appearance.customization.ui[canopa_theme::UiKind::Module as usize];
             overrides.overlay(local);
-            let state_ui = ui.state(active, hovered, false, false, focused);
+            let state_ui = ui.state(active, hovered, false, false, focus_ring);
             if overrides.foreground.is_some()
-                || [active, hovered, false, false, focused]
+                || [active, hovered, false, false, focus_ring]
                     .into_iter()
                     .zip(ui.states)
                     .any(|(on, state)| on && state.foreground.is_some())
@@ -507,8 +545,9 @@ impl App {
             else {
                 continue;
             };
-            let framed_module = container(module_frame(module_view, hovered, focused, active, ui))
-                .id(super::widget_ops::module_widget_id(window, &id));
+            let framed_module =
+                container(module_frame(module_view, hovered, focus_ring, active, ui))
+                    .id(super::widget_ops::module_widget_id(window, &id));
             let scroll_id = id.clone();
             let element: Element<'_, Message> = mouse_area(framed_module)
                 .on_enter(Message::Surface(

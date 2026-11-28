@@ -301,6 +301,19 @@ impl App {
                     Event::OverviewTyped { text } => {
                         task = self.search_from_overview(&text);
                     }
+                    // Clicking a workspace's name in the overview renames it.
+                    Event::OverviewWorkspaceLabelClicked { id } => {
+                        let workspace = self
+                            .niri
+                            .state()
+                            .workspaces
+                            .iter()
+                            .find(|workspace| workspace.id == id)
+                            .cloned();
+                        if let Some(workspace) = workspace {
+                            task = self.prompt_workspace_name(&workspace);
+                        }
+                    }
                     Event::OverviewOpenedOrClosed { is_open } => {
                         self.niri.state_mut().overview_open = is_open;
                     }
@@ -392,6 +405,35 @@ impl App {
         }
     }
 
+    /// The room the Shell's bars reserve at the left and right of each output.
+    /// A bar shown on every output has no output name and counts on each.
+    fn bar_view_insets(
+        &self,
+        sizes: &std::collections::HashMap<String, (f64, f64)>,
+    ) -> std::collections::HashMap<String, (f64, f64)> {
+        let mut insets: std::collections::HashMap<String, (f64, f64)> = sizes
+            .keys()
+            .map(|output| (output.clone(), (0.0, 0.0)))
+            .collect();
+        for (_, surface) in self.surfaces.surfaces() {
+            let bar = Self::bar_for_surface_name(&self.config.bars, &surface.bar_name);
+            let reserved =
+                f64::from(crate::surface::bar_geometry::BarGeometry::reservation(bar).max(0));
+            let left = match bar.edge {
+                crate::config::Edge::Left => true,
+                crate::config::Edge::Right => false,
+                _ => continue,
+            };
+            for (output, (start, end)) in &mut insets {
+                if surface.output_name.is_empty() || &surface.output_name == output {
+                    let side = if left { start } else { end };
+                    *side = side.max(reserved);
+                }
+            }
+        }
+        insets
+    }
+
     /// Ask Niri for output sizes, which set the minimap's scale.
     pub(super) fn refresh_niri_output_sizes(&self) -> Task<Message> {
         // The minimap and the workspace hover cards draw to the output's scale.
@@ -420,8 +462,16 @@ impl App {
                 Task::batch([task, self.refresh_hover_cards()])
             }
             super::messages::AppNiriEvent::OutputSizes(sizes) => {
-                self.niri.state_mut().output_sizes = sizes;
-                self.sync_window_session()
+                let insets = self.bar_view_insets(&sizes);
+                let state = self.niri.state_mut();
+                let changed = state.output_sizes != sizes || state.view_insets != insets;
+                state.output_sizes = sizes;
+                state.view_insets = insets;
+                if changed {
+                    Task::batch([self.sync_window_session(), self.refresh_hover_cards()])
+                } else {
+                    self.sync_window_session()
+                }
             }
         }
     }
@@ -1122,6 +1172,25 @@ mod tests {
         assert_eq!(
             app.niri.state().output_sizes.get("eDP-1"),
             Some(&(1920.0, 1080.0))
+        );
+    }
+
+    #[test]
+    fn a_side_bar_reserves_its_side_of_the_view() {
+        let mut config = make_config();
+        config.bars[0].edge = crate::config::Edge::Left;
+        let reserved =
+            crate::surface::bar_geometry::BarGeometry::reservation(&config.bars[0]) as f64;
+        assert!(reserved > 0.0);
+        let (mut app, _) = App::boot(config, vec![]);
+        // A bar surface on every output.
+        let _ = app.surfaces.surface_mut(iced::window::Id::unique());
+        let _ = app.update(Message::Niri(AppNiriEvent::OutputSizes(
+            [("eDP-1".to_owned(), (1920.0, 1080.0))].into(),
+        )));
+        assert_eq!(
+            app.niri.state().view_insets.get("eDP-1"),
+            Some(&(reserved, 0.0))
         );
     }
 

@@ -34,6 +34,7 @@ mod tests {
                 icon_name: None,
                 children: Vec::new(),
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor: (0, 0),
@@ -65,6 +66,7 @@ mod tests {
                 children: Vec::new(),
                 is_separator,
                 toggle: None,
+                emphasis: Default::default(),
             }
         };
         let tree = crate::surface::menu_popup::MenuTree {
@@ -107,6 +109,7 @@ mod tests {
             icon_name: None,
             children: Vec::new(),
             is_separator: false,
+            emphasis: Default::default(),
             toggle: None,
         };
         let tree = crate::surface::menu_popup::MenuTree {
@@ -118,6 +121,7 @@ mod tests {
                 icon_name: None,
                 children: vec![child],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor: (0, 0),

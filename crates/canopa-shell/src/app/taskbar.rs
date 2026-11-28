@@ -171,7 +171,7 @@ fn start_pin_writer() -> Option<std::sync::mpsc::Sender<Vec<u8>>> {
 }
 
 /// The edge-adjacent corner of an icon where its menu opens.
-fn menu_anchor(edge: &crate::config::Edge, bounds: iced::Rectangle) -> (i32, i32) {
+pub(super) fn menu_anchor(edge: &crate::config::Edge, bounds: iced::Rectangle) -> (i32, i32) {
     match edge {
         crate::config::Edge::Top | crate::config::Edge::Bottom => {
             (bounds.x as i32, (bounds.y + bounds.height) as i32)
@@ -214,9 +214,9 @@ impl App {
         }
         let pins = self.taskbar.pins().clone();
         let state = self.niri.state();
-        let focused = (!state.overview_open)
-            .then(|| self.current_taskbar_window())
-            .flatten();
+        // The focused application stays marked while Overview is open: the
+        // compositor rings the same window's workspace in the same accent.
+        let focused = self.current_taskbar_window();
         let windows: Vec<_> = state.windows.values().collect();
         let desired: HashMap<_, _> = parents
             .into_iter()
@@ -386,6 +386,19 @@ impl App {
         else {
             return;
         };
+        if *command == MenuCommand::Quit {
+            // Each window is asked to close, as its titlebar's close button
+            // would; applications keep their own confirmation for unsaved work.
+            let windows = self
+                .taskbar
+                .entry_in(&menu.taskbar, &menu.key)
+                .map(|entry| entry.windows.clone())
+                .unwrap_or_default();
+            for id in windows {
+                super::niri::run_niri_action(niri_ipc::Action::CloseWindow { id: Some(id) });
+            }
+            return;
+        }
         let Some(desktop_id) = self
             .taskbar
             .entry_in(&menu.taskbar, &menu.key)
@@ -396,6 +409,7 @@ impl App {
         match command {
             MenuCommand::Launch => launch_application(&desktop_id),
             MenuCommand::DesktopAction(action) => launch_desktop_action(&desktop_id, action),
+            MenuCommand::Quit | MenuCommand::Heading => {}
             MenuCommand::Pin | MenuCommand::Unpin => {
                 let configured = self
                     .config

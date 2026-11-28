@@ -75,6 +75,8 @@ notify-center-next-page = Next page
 notify-center-previous-page = Previous page
 # Opens the Center's settings view.
 notify-center-settings = Settings
+notify-center-empty = No notifications
+notify-center-empty-body = New notifications appear here.
 # Returns from the settings view to the notifications.
 notify-center-back = Back to notifications
 # Groups the reading view by application.

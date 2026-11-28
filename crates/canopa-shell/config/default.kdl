@@ -159,9 +159,11 @@ bar "main" {
         // "push-bar" puts the drawer at the edge and moves the bar inward.
         // Both modes overlay windows without resizing them.
         drawer-mode "overlay"
-        width 416
-        launcher-width 580
-        ui { margin 12 0; radius 24; border width=1 color="border"; }
+        width 448
+        launcher-width 612
+        // Panels keep 8 px from the bar and line up with its top and bottom;
+        // the margin away from the bar holds the panel's shadow.
+        ui { margin 12 24 16 8; radius 24; border width=1 color="border"; }
         // Adjacent switches pair into tiles: Wi-Fi and Bluetooth, then
         // Do Not Disturb and Keep awake.
         start "network" "bluetooth"

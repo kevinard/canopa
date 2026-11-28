@@ -163,6 +163,8 @@ impl App {
         let mut tasks = Vec::new();
         if service == crate::modules::taskbar::MENU_SERVICE {
             self.handle_taskbar_menu_item(menu_item_id);
+        } else if service == crate::modules::workspaces::MENU_SERVICE {
+            tasks.push(self.handle_workspace_menu_item(menu_item_id));
         } else {
             tasks.extend(
                 self.apply_app_effects(vec![AppEffect::SendSniMenuItemClicked {
@@ -197,8 +199,8 @@ impl App {
                 .unwrap_or_else(super::surfaces::BarSurfaceIdentity::all_screens),
         };
         // Tray menu search applies to DBusMenus; taskbar menus are short.
-        let search_enabled =
-            self.sni_menu_search_enabled() && meta.service != crate::modules::taskbar::MENU_SERVICE;
+        let search_enabled = self.sni_menu_search_enabled()
+            && !crate::surface::menu_popup::is_shell_menu(&meta.service);
         let request = super::foreground::MenuForegroundRequest {
             meta,
             search_enabled,
@@ -215,14 +217,30 @@ impl App {
     ) -> Task<Message> {
         let meta = request.meta.clone();
         let bar = Self::bar_for_surface_identity(&self.config.bars, &meta.origin);
-        let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &meta.tree);
+        // Clear of the rail's visible edge: past its outer margin, with the
+        // same 8 px gap as panels and hover cards.
+        let (near, _, _, _) = bar.outer_margins();
+        let settings =
+            menu_popup_window_settings(&bar.edge, bar.collapsed_width + near + 8, &meta.tree);
         let (popup_id, open_task) = Message::popup_open(settings);
         self.foreground
             .handle(super::foreground::ForegroundIntent::MenuWindowOpened {
                 window: popup_id,
                 request,
             });
-        open_task
+        // The menu replaces any card or tooltip of the item it opened from.
+        let mut tasks = vec![self.close_hover_cards()];
+        let tooltip_owners: Vec<_> = self
+            .surfaces
+            .tooltip_popups
+            .values()
+            .map(|popup| popup.target_window)
+            .collect();
+        for window in tooltip_owners {
+            tasks.extend(self.close_tooltip_popup_if_open(window));
+        }
+        tasks.push(open_task);
+        Task::batch(tasks)
     }
 
     pub(super) fn update_menu_popup(
@@ -361,6 +379,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 MenuItem {
@@ -371,6 +390,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
             ],
@@ -400,6 +420,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor,
@@ -532,6 +553,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor: (0, 0),
@@ -582,6 +604,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 crate::surface::menu_popup::MenuItem {
@@ -592,6 +615,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
             ],
@@ -646,6 +670,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 crate::surface::menu_popup::MenuItem {
@@ -656,6 +681,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
             ],
@@ -696,6 +722,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 crate::surface::menu_popup::MenuItem {
@@ -706,6 +733,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: true,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 crate::surface::menu_popup::MenuItem {
@@ -716,6 +744,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 crate::surface::menu_popup::MenuItem {
@@ -726,6 +755,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
             ],
@@ -856,6 +886,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor: (12, 34),
@@ -888,6 +919,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor: (490, 30),
@@ -916,6 +948,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor: (490, 30),

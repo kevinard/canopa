@@ -18,7 +18,11 @@ bar. Choose another corner with `banners { position "top-end"; }`: `top-start`,
 direction). Banners never take keyboard focus.
 
 - Low and normal urgency banners close after 5 seconds unless the application asks
-  for another timeout. Critical banners stay until dismissed.
+  for another timeout. Critical banners stay until dismissed. When a notification
+  with its own actions (such as **Join call**) closes this way, it stays live in
+  the Center, so its actions keep working until you use or dismiss it, or the
+  application withdraws it. A notification whose application chose its own
+  timeout ends when that timeout passes.
 - A banner shows the application icon, summary, body (with basic markup and
   images) and the application's action buttons. Clicking the header runs the
   default action. A single named action appears below the message.
@@ -44,11 +48,17 @@ mark anything as read.
 The Center is 480 pixels wide and fills the screen height. It lists notifications
 newest first; **Group by app** groups them by application, each group collapsed to
 its newest item with a count, and **Show timeline** returns to the single list.
-A dot marks notifications that are still unread.
+A dot marks notifications that are still unread; an empty Center says
+**No notifications**. **Group by app** and **Settings** are icon buttons in the
+heading beside Close (Group by app is accented while on); below the list,
+**Mark all read** leads the footer and **Clear all** sits apart at its end.
 
 Each notification offers **Open notification**, **Dismiss**, **Mark as read**,
-**Reply…** when supported, its own actions, and **Remove** for finished items. For
-the whole list:
+**Reply…** when supported, its own actions, and **Remove** for finished items.
+The application's own actions share the card's width as buttons, the first one
+filled, like on its banner. Open, Reply and the
+application's own actions appear only while the notification is still live, because the sender can no longer receive them once it has closed or
+expired; finished items keep Mark as read and Remove. For the whole list:
 
 - **Mark all read**.
 - **Clear all** dismisses and hides everything; **Undo clear** brings it back for

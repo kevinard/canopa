@@ -15,6 +15,10 @@ pub enum ClockEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ClockDetailSession {
     month_offset: i32,
+    /// A day chosen on the grid: the agenda shows its events.
+    selected: Option<chrono::NaiveDate>,
+    /// The agenda lists every coming event, not just the next few.
+    expanded: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +26,8 @@ enum ClockDetailMessage {
     PreviousMonth,
     NextMonth,
     Today,
+    Select(chrono::NaiveDate),
+    ToggleAgenda,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -243,6 +249,9 @@ impl ClockModule {
         format: crate::config::FormatConfig,
         content_rotation: crate::config::ContentRotation,
     ) -> Self {
+        // Start reading local calendars now, so the agenda is ready when the
+        // calendar first opens.
+        let _ = super::agenda::snapshot();
         ClockModule {
             id,
             time_format,
@@ -279,29 +288,25 @@ impl ClockModule {
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
         month_offset: i32,
+        selected: Option<chrono::NaiveDate>,
+        expanded: bool,
     ) -> iced::Element<'_, crate::app::Message> {
         use canopa_ui::accessibility::{Live, Node, Role, semantic};
         use iced::widget::{column, container, row};
         use iced::{Alignment, Length};
 
-        let crate::modules::ModuleState::Clock(clock) = state else {
+        let crate::modules::ModuleState::Clock(_) = state else {
             return iced::widget::Space::new().into();
         };
 
-        let summary = if self.format.expanded.is_some() {
+        let today = chrono::Local::now().date_naive();
+        // The panel's title is today's date; a configured expanded format adds
+        // its own line above the month.
+        let summary = self.format.expanded.is_some().then(|| {
             <Self as crate::modules::render::ModuleRender>::render_panel_with_style(
                 self, state, bar_style,
             )
-        } else {
-            column![
-                crate::theme::strong_text(clock.time.clone())
-                    .size(crate::theme::title_size() * 2.0),
-                crate::theme::text(clock.date.clone()).style(canopa_ui::muted),
-            ]
-            .spacing(4)
-            .into()
-        };
-        let today = chrono::Local::now().date_naive();
+        });
         let month = calendar_month_for(today, month_offset);
         let first = chrono::NaiveDate::from_ymd_opt(month.year, month.month, 1)
             .expect("calendar month is valid");
@@ -328,9 +333,29 @@ impl ClockModule {
                     canopa_ui::Action::Normal,
                     false,
                 )
-                .height(34)
+                .height(32)
                 .padding(0)
-                .width(width),
+                .width(width)
+                // The same filled round control as the panel's Close button.
+                .style(|theme, status| {
+                    let colors = canopa_ui::colors(theme);
+                    let engaged = matches!(
+                        status,
+                        iced::widget::button::Status::Hovered
+                            | iced::widget::button::Status::Pressed
+                    );
+                    iced::widget::button::Style {
+                        background: Some(
+                            colors
+                                .text
+                                .scale_alpha(if engaged { 0.16 } else { 0.07 })
+                                .into(),
+                        ),
+                        text_color: colors.text,
+                        border: iced::Border::default().rounded(16),
+                        ..Default::default()
+                    }
+                }),
             )
         };
         let today_label = fl!("shell-calendar-today");
@@ -343,17 +368,37 @@ impl ClockModule {
                 Node::heading(title.clone(), 2)
                     .key("calendar-month")
                     .live(Live::Polite),
-                crate::theme::strong_text(title.clone())
-                    .width(Length::Fill)
-                    .align_x(canopa_ui::direction::text_start()),
+                crate::theme::strong_text(title.clone()),
             ),
-            action(
-                today_label.clone(),
-                &today_label,
-                "today",
-                ClockDetailMessage::Today,
-                today_width,
-            ),
+            // The ISO week, where weeks start on Monday, of the month's first
+            // shown week or of today.
+            if canopa_i18n::format::first_weekday() == chrono::Weekday::Mon {
+                use chrono::Datelike;
+                let week = if month_offset == 0 { today } else { first };
+                crate::theme::text(fl!(
+                    "shell-calendar-week",
+                    number = canopa_i18n::format::integer(i64::from(week.iso_week().week()))
+                ))
+                .size(crate::theme::label_size())
+                .color(crate::theme::palette().muted)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .into()
+            } else {
+                iced::widget::Space::new().into()
+            },
+            iced::widget::Space::new().width(Length::Fill).into(),
+            // "Today" returns to today; already there, it steps aside.
+            if month_offset == 0 && selected.is_none() {
+                iced::widget::Space::new().width(today_width).into()
+            } else {
+                action(
+                    today_label.clone(),
+                    &today_label,
+                    "today",
+                    ClockDetailMessage::Today,
+                    today_width,
+                )
+            },
             action(
                 canopa_ui::direction::back_chevron().to_owned(),
                 &fl!("shell-calendar-previous-month"),
@@ -373,13 +418,11 @@ impl ClockModule {
         .align_y(Alignment::Center)
         .width(Length::Fill);
 
-        let mut calendar = column![controls, crate::theme::divider()]
-            .spacing(10)
-            .width(Length::Fill);
+        let mut calendar = column![controls].spacing(10).width(Length::Fill);
         let mut weekdays = row![].spacing(4).width(Length::Fill);
         for day in visual_weekdays() {
             use canopa_i18n::format::{Length as Name, weekday};
-            let (label, name) = (weekday(day, Name::Medium), weekday(day, Name::Long));
+            let (label, name) = (weekday(day, Name::Short), weekday(day, Name::Long));
             weekdays = weekdays.push(semantic(
                 Node::new(Role::ColumnHeader).label(name).hide_text(),
                 container(
@@ -391,36 +434,164 @@ impl ClockModule {
                 .center_x(Length::Fill),
             ));
         }
-        let mut grid = column![semantic(
-            Node::new(Role::Row).key("calendar-weekdays"),
-            weekdays
-        )]
-        .spacing(10)
+        let mut grid = column![
+            semantic(Node::new(Role::Row).key("calendar-weekdays"), weekdays),
+            iced::widget::Space::new().height(2),
+        ]
+        .spacing(4)
         .width(Length::Fill);
 
-        for (index, week) in month.weeks.into_iter().enumerate() {
+        // The days of the neighbouring months fill the blank cells, dimmed.
+        let previous_length = {
+            use chrono::Datelike;
+            first.pred_opt().map_or(31, |last| last.day())
+        };
+        let mut weeks: Vec<[(Option<u32>, Option<u32>); 7]> = Vec::new();
+        let mut next = 1;
+        for (index, week) in month.weeks.iter().enumerate() {
+            let leading = week.iter().take_while(|day| day.is_none()).count() as u32;
+            let mut cells = [(None, None); 7];
+            for (column, day) in week.iter().enumerate() {
+                cells[column] = match day {
+                    Some(day) => (Some(*day), None),
+                    None if index == 0 => {
+                        (None, Some(previous_length + 1 + column as u32 - leading))
+                    }
+                    None => {
+                        next += 1;
+                        (None, Some(next - 1))
+                    }
+                };
+            }
+            weeks.push(cells);
+        }
+        let event_days: std::collections::HashSet<chrono::NaiveDate> = super::agenda::snapshot()
+            .events
+            .iter()
+            .flat_map(|event| {
+                // Every day an event covers, its last moment excluded.
+                let last = (event.end - chrono::Duration::seconds(1)).date();
+                event
+                    .start
+                    .date()
+                    .iter_days()
+                    .take_while(move |day| *day <= last)
+            })
+            .collect();
+        let _ = next;
+        for (index, week) in weeks.into_iter().enumerate() {
             let mut row = row![].spacing(4).width(Length::Fill);
-            for day in canopa_ui::direction::ordered(week) {
+            for (index_in_week, (day, adjacent)) in
+                canopa_ui::direction::ordered(week).into_iter().enumerate()
+            {
                 let is_today = day.is_some() && day == month.today;
                 let label = day
+                    .or(adjacent)
                     .map(|day| canopa_i18n::format::integer(i64::from(day)))
                     .unwrap_or_default();
                 let palette = crate::theme::palette();
-                let cell = container(crate::theme::strong_text(label))
-                    .width(Length::FillPortion(1))
-                    .height((crate::theme::body_size() * 1.7).ceil().max(30.0))
+                let weekend = matches!(
+                    visual_weekdays()[index_in_week],
+                    chrono::Weekday::Sat | chrono::Weekday::Sun
+                );
+                let side = (crate::theme::body_size() * 2.3).ceil().max(32.0);
+                let date = day
+                    .and_then(|day| chrono::NaiveDate::from_ymd_opt(month.year, month.month, day));
+                // A neighbouring month's day, for its event dot.
+                let shown = date.or_else(|| {
+                    use chrono::Datelike;
+                    let adjacent = adjacent?;
+                    let neighbour = if index == 0 {
+                        first.pred_opt()?
+                    } else {
+                        first.checked_add_months(chrono::Months::new(1))?
+                    };
+                    neighbour.with_day(adjacent)
+                });
+                let is_selected = date.is_some() && date == selected;
+                // A day with events carries a small dot under its number.
+                let busy = shown.is_some_and(|date| event_days.contains(&date));
+                let text = if is_today {
+                    crate::theme::strong_text(label).color(palette.on_accent)
+                } else if day.is_none() {
+                    // Another month's day is dimmed, all alike; its dot says
+                    // whether it has events.
+                    crate::theme::text(label).color(palette.muted.scale_alpha(0.78))
+                } else if weekend {
+                    // Weekends are set apart by weight, never dimmed like
+                    // the days of other months.
+                    crate::theme::text(label).color(palette.text.scale_alpha(0.86))
+                } else {
+                    crate::theme::text(label)
+                };
+                let dot =
+                    container(iced::widget::Space::new().width(6).height(6)).style(move |_| {
+                        container::Style::default()
+                            .background(if !busy {
+                                iced::Color::TRANSPARENT
+                            } else if is_today {
+                                palette.on_accent
+                            } else {
+                                palette.accent
+                            })
+                            .border(iced::Border::default().rounded(3.0))
+                    });
+                let number = column![text.size(crate::theme::body_size()), dot]
+                    .spacing(1)
+                    .align_x(Alignment::Center);
+                let disc = container(number)
+                    .width(side)
+                    .height(side)
                     .align_x(Alignment::Center)
                     .align_y(Alignment::Center)
                     .style(move |_| {
                         if is_today {
                             container::Style::default()
                                 .background(palette.accent)
-                                .color(palette.on_accent)
-                                .border(iced::Border::default().rounded(9))
+                                .border(iced::Border::default().rounded(side / 2.0))
+                        } else if is_selected {
+                            // The chosen day: a ring, so today keeps its fill.
+                            container::Style::default()
+                                .background(palette.accent.scale_alpha(0.14))
+                                .border(
+                                    iced::Border::default()
+                                        .rounded(side / 2.0)
+                                        .width(1.5)
+                                        .color(palette.accent),
+                                )
                         } else {
                             container::Style::default()
                         }
                     });
+                // A day of the month is a button: it shows that day's events.
+                let disc: iced::Element<'_, crate::app::Message> = match date {
+                    Some(date) => iced::widget::button(disc)
+                        .padding(0)
+                        .on_press(crate::app::Message::Modules(
+                            crate::app::messages::ModuleRuntimeEvent::Detail {
+                                target: self.id.clone(),
+                                message: crate::modules::ModuleDetailMessage::new(
+                                    ClockDetailMessage::Select(date),
+                                ),
+                            },
+                        ))
+                        .style(move |_, status| iced::widget::button::Style {
+                            background: matches!(
+                                status,
+                                iced::widget::button::Status::Hovered
+                                    | iced::widget::button::Status::Pressed
+                            )
+                            .then(|| palette.text.scale_alpha(0.08).into()),
+                            text_color: palette.text,
+                            border: iced::Border::default().rounded(side / 2.0),
+                            ..Default::default()
+                        })
+                        .into(),
+                    None => disc.into(),
+                };
+                let cell = container(disc)
+                    .width(Length::FillPortion(1))
+                    .align_x(Alignment::Center);
                 // Blank cells keep each day in its weekday's column.
                 let node = match day {
                     Some(day) => Node::new(Role::GridCell)
@@ -437,22 +608,321 @@ impl ClockModule {
         }
         calendar = calendar.push(semantic(Node::grid(title).key("calendar-grid"), grid));
 
-        column![
-            container(summary)
-                .padding([16, 18])
-                .width(Length::Fill)
-                .style(|_| container::Style::default()
-                    .background(crate::theme::accent_surface())
-                    .border(iced::Border::default().rounded(16))),
+        let mut detail = column![].spacing(16).width(Length::Fill);
+        if let Some(summary) = summary {
+            detail = detail.push(container(summary).padding([4, 0]).width(Length::Fill));
+        }
+        // What comes next leads; the month follows to look further ahead.
+        let mut detail = detail;
+        let agenda = super::agenda::snapshot();
+        if agenda.has_calendars {
+            let toggle =
+                crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Detail {
+                    target: self.id.clone(),
+                    message: crate::modules::ModuleDetailMessage::new(
+                        ClockDetailMessage::ToggleAgenda,
+                    ),
+                });
+            detail = detail.push(agenda_view(&agenda, today, selected, expanded, toggle));
+        }
+        detail = detail.push(
             container(calendar)
                 .padding([12, 10])
                 .width(Length::Fill)
-                .style(crate::theme::card)
-        ]
-        .spacing(14)
-        .width(Length::Fill)
-        .into()
+                .style(|_| {
+                    container::Style::default()
+                        .background(crate::theme::palette().text.scale_alpha(0.045))
+                        .border(iced::Border::default().rounded(18))
+                }),
+        );
+        detail.into()
     }
+}
+
+/// Events the agenda lists when no day is chosen.
+const UPCOMING: usize = 4;
+
+/// How many of the coming events the agenda lists: `UPCOMING`, plus the rest
+/// of the last day shown (two at most), so a day is never split.
+fn listed_count(agenda: &super::agenda::Agenda) -> usize {
+    let mut count = UPCOMING.min(agenda.events.len());
+    if let Some(last) = agenda.events.get(count.wrapping_sub(1)) {
+        let day = last.start.date();
+        while count < UPCOMING + 2
+            && agenda
+                .events
+                .get(count)
+                .is_some_and(|event| event.start.date() == day)
+        {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Height of the agenda below the month grid, for the panel's size.
+fn agenda_height(agenda: &super::agenda::Agenda) -> f32 {
+    if !agenda.has_calendars {
+        return 0.0;
+    }
+    let upcoming = &agenda.events[..listed_count(agenda)];
+    let rows = upcoming.len().max(1) as f32;
+    let mut days: Vec<_> = upcoming.iter().map(|event| event.start.date()).collect();
+    days.dedup();
+    // The gap above, the heading, each event, each day's name and the "more"
+    // link when the week has more.
+    let week_end = chrono::Local::now().date_naive() + chrono::Duration::days(7);
+    let more = agenda.events[upcoming.len()..]
+        .iter()
+        .any(|event| event.start.date() < week_end);
+    // The coming days head their own events; only an empty agenda has a
+    // heading of its own.
+    let heading = if upcoming.is_empty() { 24.0 } else { 0.0 };
+    16.0 + heading
+        + rows * 44.0
+        + days.len() as f32 * 26.0
+        + days.len().saturating_sub(1) as f32 * 6.0
+        + if more { 30.0 } else { 0.0 }
+}
+
+/// The coming week's events from local calendars: what, when and where.
+fn agenda_view<'a>(
+    agenda: &super::agenda::Agenda,
+    today: chrono::NaiveDate,
+    selected: Option<chrono::NaiveDate>,
+    expanded: bool,
+    toggle: crate::app::Message,
+) -> iced::Element<'a, crate::app::Message> {
+    use canopa_ui::accessibility::{Node, semantic};
+    // Expanded, the agenda lists the coming week; the panel scrolls.
+    let shown = if expanded { 24 } else { UPCOMING };
+    use iced::widget::{column, container, row};
+    use iced::{Alignment, Length};
+    let palette = crate::theme::palette();
+    // A chosen day lists its own events; otherwise what is coming next.
+    let events: Vec<&super::agenda::Event> = match selected {
+        Some(day) => agenda.on(day).take(shown).collect(),
+        None => {
+            let count = if expanded {
+                shown.min(agenda.events.len())
+            } else {
+                listed_count(agenda)
+            };
+            agenda.events[..count]
+                .iter()
+                .filter(|event| !expanded || event.start.date() < today + chrono::Duration::days(7))
+                .collect()
+        }
+    };
+    let heading = match selected {
+        Some(day) => {
+            canopa_i18n::format::weekday_month_day_with(day, canopa_i18n::format::Length::Long)
+        }
+        None => fl!("shell-calendar-upcoming"),
+    };
+    // The coming days head their own events: "Upcoming" above "Today" would
+    // say the same twice.
+    let mut list = column![].spacing(6).width(Length::Fill);
+    if selected.is_some() || events.is_empty() {
+        list = list.push(semantic(
+            Node::heading(heading.clone(), 3).key("calendar-upcoming"),
+            crate::theme::strong_text(heading).size(crate::theme::body_size()),
+        ));
+    }
+    if events.is_empty() {
+        list = list.push(
+            crate::theme::text(if selected.is_some() {
+                fl!("shell-calendar-no-events-day")
+            } else {
+                fl!("shell-calendar-no-events")
+            })
+            .size(crate::theme::body_size())
+            .color(palette.muted),
+        );
+    }
+    let listed = events.len();
+    let mut previous_day = None;
+    for event in events {
+        let day = selected.unwrap_or(event.start.date());
+        // Later days read with their date: "Tomorrow · November 28", "Monday,
+        // November 30". Today's date heads the panel already.
+        let day_label = if day == today {
+            fl!("shell-calendar-today")
+        } else if Some(day) == today.succ_opt() {
+            format!(
+                "{} · {}",
+                fl!("shell-calendar-tomorrow"),
+                canopa_i18n::format::month_day(day, canopa_i18n::format::Length::Long)
+            )
+        } else {
+            canopa_i18n::format::weekday_month_day_with(day, canopa_i18n::format::Length::Long)
+        };
+        let when = if event.all_day {
+            fl!("shell-calendar-all-day")
+        } else {
+            let end = canopa_i18n::format::time(event.end.time());
+            // An event that runs past midnight says so.
+            let end = if event.end.date() > event.start.date()
+                && event.end.time() != chrono::NaiveTime::MIN
+            {
+                fl!("shell-calendar-ends-next-day", time = end)
+            } else {
+                end
+            };
+            format!(
+                "{} – {}",
+                canopa_i18n::format::time(event.start.time()),
+                end
+            )
+        };
+        // What is under way or about to begin says so first.
+        let now = chrono::Local::now().naive_local();
+        let soon = (!event.all_day)
+            .then(|| {
+                if event.start <= now && now < event.end {
+                    Some(fl!("shell-calendar-now"))
+                } else {
+                    let minutes = (event.start - now).num_minutes();
+                    (0..60)
+                        .contains(&minutes)
+                        .then(|| fl!("shell-calendar-in-minutes", minutes = (minutes.max(1))))
+                }
+            })
+            .flatten();
+        let when = match &soon {
+            Some(_) => format!(" · {when}"),
+            None => when,
+        };
+        // Events are grouped under their day's name (a chosen day has its
+        // name in the heading already).
+        if selected.is_none() && previous_day != Some(day) {
+            // Later days stand apart from the events above them.
+            let later_group = previous_day.is_some();
+            previous_day = Some(day);
+            list = list.push(
+                container(semantic(
+                    Node::heading(day_label.clone(), 3),
+                    crate::theme::strong_text(day_label.clone())
+                        .size(crate::theme::label_size() + 1.0)
+                        .color(if day == today {
+                            palette.accent
+                        } else {
+                            palette.muted
+                        }),
+                ))
+                .padding(iced::Padding {
+                    top: if later_group { 8.0 } else { 0.0 },
+                    ..Default::default()
+                }),
+            );
+        }
+        let mut detail = when;
+        if let Some(location) = &event.location {
+            detail.push_str(" · ");
+            detail.push_str(location);
+        }
+        let room = 300.0;
+        let summary = crate::theme::ellipsize(&event.summary, room, crate::theme::body_size());
+        let detail_size = crate::theme::label_size() + 1.0;
+        // What is under way or about to begin leads, in the accent: it is the
+        // panel's most useful fact.
+        let soon_width = soon.as_ref().map_or(0.0, |soon| {
+            crate::theme::text_width(soon, detail_size) + 2.0
+        });
+        let detail_line = crate::theme::ellipsize(&detail, room - soon_width, detail_size);
+        let detail_text = match &soon {
+            Some(soon) => format!("{soon}{detail}"),
+            None => detail.clone(),
+        };
+        let bar = container(iced::widget::Space::new().width(3).height(32)).style(move |_| {
+            container::Style::default()
+                .background(if day == today {
+                    palette.accent
+                } else {
+                    palette.accent.scale_alpha(0.45)
+                })
+                .border(iced::Border::default().rounded(2))
+        });
+        list = list.push(semantic(
+            Node::new(canopa_ui::accessibility::Role::ListItem)
+                .label(format!("{}, {}, {}", event.summary, day_label, detail_text)),
+            row![
+                bar,
+                column![
+                    crate::theme::strong_text(summary)
+                        .size(crate::theme::body_size())
+                        .wrapping(iced::widget::text::Wrapping::None),
+                    row(soon.map(|soon| {
+                        crate::theme::strong_text(soon)
+                            .size(detail_size)
+                            .color(palette.accent)
+                            .wrapping(iced::widget::text::Wrapping::None)
+                            .into()
+                    }))
+                    .push(
+                        // Times read clearly; the muted tone is for headings.
+                        crate::theme::text(detail_line)
+                            .size(detail_size)
+                            .color(palette.text.scale_alpha(0.8))
+                            .wrapping(iced::widget::text::Wrapping::None),
+                    ),
+                ]
+                .spacing(2),
+            ]
+            .spacing(10)
+            .height(38)
+            .align_y(Alignment::Center),
+        ));
+    }
+    // What the list leaves out this week is counted, never silently dropped.
+    if selected.is_none() {
+        let week_end = today + chrono::Duration::days(7);
+        let more = agenda
+            .events
+            .iter()
+            .skip(listed)
+            .filter(|event| event.start.date() < week_end)
+            .count();
+        // A link that shows the rest in place, or folds them away again.
+        if more > 0 {
+            let label = if expanded {
+                fl!("shell-calendar-fewer-events")
+            } else {
+                fl!("shell-calendar-more-events", count = (more as i64))
+            };
+            list = list.push(semantic(
+                Node::button(label.clone())
+                    .key("calendar-more")
+                    .on_click(Some(toggle.clone())),
+                iced::widget::button(
+                    row![
+                        crate::theme::strong_text(label)
+                            .size(crate::theme::label_size() + 1.0)
+                            .color(palette.accent),
+                        crate::theme::text(if expanded { "⌃" } else { "⌄" })
+                            .size(crate::theme::label_size() + 1.0)
+                            .color(palette.accent),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                )
+                .padding([4, 8])
+                .on_press(toggle)
+                .style(move |_, status| iced::widget::button::Style {
+                    background: matches!(
+                        status,
+                        iced::widget::button::Status::Hovered
+                            | iced::widget::button::Status::Pressed
+                    )
+                    .then(|| palette.accent.scale_alpha(0.12).into()),
+                    border: iced::Border::default().rounded(8),
+                    text_color: palette.accent,
+                    ..Default::default()
+                }),
+            ));
+        }
+    }
+    container(list).padding([0, 4]).width(Length::Fill).into()
 }
 
 impl crate::modules::Module for ClockModule {
@@ -526,8 +996,13 @@ impl crate::modules::detail::ModuleDetailLifecycle for ClockModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> Option<crate::modules::ModuleDetailSession> {
-        matches!(state, crate::modules::ModuleState::Clock(_))
-            .then(|| Box::new(ClockDetailSession { month_offset: 0 }) as _)
+        matches!(state, crate::modules::ModuleState::Clock(_)).then(|| {
+            Box::new(ClockDetailSession {
+                month_offset: 0,
+                selected: None,
+                expanded: false,
+            }) as _
+        })
     }
 
     fn update_module_detail_session(
@@ -551,6 +1026,14 @@ impl crate::modules::detail::ModuleDetailLifecycle for ClockModule {
             }
             ClockDetailMessage::Today => {
                 session.month_offset = 0;
+                session.selected = None;
+            }
+            // Choosing the selected day again returns to what is coming.
+            ClockDetailMessage::Select(day) => {
+                session.selected = (session.selected != Some(*day)).then_some(*day);
+            }
+            ClockDetailMessage::ToggleAgenda => {
+                session.expanded = !session.expanded;
             }
         }
 
@@ -563,8 +1046,8 @@ impl crate::modules::render::ModuleRender for ClockModule {
         Some(self)
     }
 
-    /// On a vertical spine a 12-hour time stacks its day period under the
-    /// digits ("11:58" over "PM") so it stays legible within the rail.
+    /// On a vertical spine a 12-hour time carries its day period as a small
+    /// suffix ("11:58ᴾᴹ"), with the short date below, so it fits the rail.
     fn render_bar_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -603,22 +1086,33 @@ impl crate::modules::render::ModuleRender for ClockModule {
         // "Nov 12": the short month and day, under the time; the tooltip and
         // the calendar give the full date.
         let date = canopa_i18n::format::month_day_short(today);
-        let mut column = iced::widget::column![
+        // The day period follows the digits as a small suffix ("11:58ᴾᴹ"), so
+        // the time stays on one line.
+        let mut time = iced::widget::row![
             crate::theme::strong_text(digits.to_owned())
                 .size(resolved.size.unwrap_or(14.0).max(14.0))
                 .color(color)
                 .wrapping(iced::widget::text::Wrapping::None),
         ]
-        .align_x(iced::Alignment::Center)
-        .width(iced::Length::Fill);
+        .spacing(3)
+        .align_y(iced::Alignment::End);
         if let Some(period) = period {
-            column = column.push(
-                crate::theme::text(period.to_owned())
-                    .size(12)
-                    .color(color.scale_alpha(0.75))
-                    .wrapping(iced::widget::text::Wrapping::None),
+            time = time.push(
+                iced::widget::container(
+                    crate::theme::strong_text(period.to_owned())
+                        .size(9)
+                        .color(color.scale_alpha(0.75))
+                        .wrapping(iced::widget::text::Wrapping::None),
+                )
+                .padding(iced::Padding {
+                    bottom: 2.0,
+                    ..Default::default()
+                }),
             );
         }
+        let mut column = iced::widget::column![time]
+            .align_x(iced::Alignment::Center)
+            .width(iced::Length::Fill);
         column = column.push(
             iced::widget::container(
                 crate::theme::text(date)
@@ -652,7 +1146,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        Some(self.view_clock_detail_with_month_offset(state, bar_style, 0))
+        Some(self.view_clock_detail_with_month_offset(state, bar_style, 0, None, false))
     }
 
     fn render_detail_session_with_style(
@@ -661,25 +1155,38 @@ impl crate::modules::render::ModuleRender for ClockModule {
         bar_style: &crate::config::Style,
         session: &crate::modules::ModuleDetailSession,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        let month_offset = session
+        let (month_offset, selected, expanded) = session
             .downcast_ref::<ClockDetailSession>()
-            .map(|session| session.month_offset)
+            .map(|session| (session.month_offset, session.selected, session.expanded))
             .unwrap_or_default();
 
-        Some(self.view_clock_detail_with_month_offset(state, bar_style, month_offset))
+        Some(self.view_clock_detail_with_month_offset(
+            state,
+            bar_style,
+            month_offset,
+            selected,
+            expanded,
+        ))
     }
 
     fn detail_preferred_size(
         &self,
         _state: &crate::modules::ModuleState,
         _bar_style: &crate::config::Style,
-        _session: Option<&crate::modules::ModuleDetailSession>,
+        session: Option<&crate::modules::ModuleDetailSession>,
     ) -> Option<crate::surface::panel::PanelPreferredSize> {
+        // Five or six week rows, as the shown month needs.
+        let month_offset = session
+            .and_then(|session| session.downcast_ref::<ClockDetailSession>())
+            .map_or(0, |session| session.month_offset);
+        let rows = calendar_month_for(chrono::Local::now().date_naive(), month_offset)
+            .weeks
+            .len() as f32;
         Some(crate::surface::panel::PanelPreferredSize {
             width: (324.0
                 * (crate::theme::body_size() / 14.0).max(crate::theme::label_size() / 12.0))
             .ceil() as u32,
-            height: (462.0
+            height: ((76.0 + 37.0 * rows + agenda_height(&super::agenda::snapshot()))
                 * (crate::theme::body_size() / 14.0).max(crate::theme::label_size() / 12.0))
             .ceil() as u32,
         })
@@ -1100,8 +1607,11 @@ mod tests {
             "%a %d %b".into(),
             crate::config::FormatConfig::default(),
         );
-        let mut session: crate::modules::ModuleDetailSession =
-            Box::new(ClockDetailSession { month_offset: 0 });
+        let mut session: crate::modules::ModuleDetailSession = Box::new(ClockDetailSession {
+            month_offset: 0,
+            selected: None,
+            expanded: false,
+        });
 
         module.update_module_detail_session(
             &mut session,

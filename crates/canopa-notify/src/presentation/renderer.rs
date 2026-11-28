@@ -13,7 +13,7 @@ const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
 /// Width kept clear of the floating close control on a banner's first line.
 const BODY_IMAGE_VISUAL_HEIGHT: u32 = 48;
 const BODY_PREVIEW_MAX_HEIGHT: u32 = 120;
-const BANNER_MAX_WIDTH: f32 = 360.0;
+const BANNER_MAX_WIDTH: f32 = 388.0;
 // One ordinary Iced wheel step: leave room to fully reveal middle stack cards.
 const BANNER_SCROLL_REVEAL_SPACE: f32 = 60.0;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
@@ -109,8 +109,10 @@ impl IcedLayerShellBannerPresenter {
             },
             exclusive_zone: spec.exclusive_zone,
             size: Some((0, 0)),
-            // Keep the stack clear of both edges at the anchored corner.
-            margin: (12, 12, 12, 12),
+            // Keep the stack clear of both edges at the anchored corner, with
+            // the shell's spacing: 8 px beside a side bar, the bottom lined up
+            // with the bar's (top, right, bottom, left).
+            margin: (12, 12, 16, 8),
             keyboard_interactivity: match spec.keyboard_interactivity {
                 BannerKeyboardInteractivity::None => KeyboardInteractivity::None,
             },
@@ -310,6 +312,11 @@ enum BannerUiMessage {
         callback: iced_layershell::actions::ActivationTokenCallback,
     },
     SetInputRegion(BannerInputRegion),
+    /// The cards' shapes changed: the compositor blurs behind them.
+    Glass {
+        window: iced::window::Id,
+        rects: Vec<(i32, i32, i32, i32)>,
+    },
     /// Open the composer; the surface takes keyboard focus while it is open.
     ReplyRequested(BannerTarget),
     ReplyChanged(String),
@@ -383,6 +390,10 @@ impl TryInto<iced_layershell::actions::LayerShellCustomActionWithId> for BannerU
                     }),
                 ))
             }
+            Self::Glass { window, rects } => Ok(LayerShellCustomActionWithId::new(
+                Some(window),
+                LayerShellCustomAction::SetBlurRegion((!rects.is_empty()).then_some(rects)),
+            )),
             Self::SetInputRegion(latest) => Ok(LayerShellCustomActionWithId::new(
                 None,
                 LayerShellCustomAction::SetInputRegion(
@@ -1890,7 +1901,7 @@ fn banner_ui_view(
                 .then(|| state.pending_acknowledgement.clone())
                 .flatten(),
         };
-        let measured = sensor(banner_stack_widget(state, viewport.height))
+        let measured = sensor(banner_stack_widget(state, viewport.height, window))
             .key((state.presentation_generation, viewport))
             // Sensor keys retrigger on_show, not an on_resize-only subscription.
             // Measure even when scrolling has moved both stack edges out of view.
@@ -1924,6 +1935,7 @@ fn banner_ui_view(
 fn banner_stack_widget(
     state: &BannerUiState,
     viewport_height: f32,
+    window: iced::window::Id,
 ) -> iced::Element<'_, BannerUiMessage> {
     use iced::widget::{container, keyed_column, scrollable};
     use iced::{Alignment, Length};
@@ -1979,6 +1991,22 @@ fn banner_stack_widget(
         );
     }
 
+    // Each card is glass: the compositor blurs what lies behind its shape.
+    let radius = state
+        .presentation
+        .appearance
+        .style(canopa_theme::UiKind::Notification)
+        .radius
+        .map(|r| r.px());
+    let stack: iced::Element<'_, BannerUiMessage> = if state.presentation.appearance.high_contrast()
+    {
+        stack.into()
+    } else {
+        canopa_ui::glass::children(stack, radius, true, move |shapes| BannerUiMessage::Glass {
+            window,
+            rects: canopa_ui::glass::union(shapes),
+        })
+    };
     container(stack)
         // A multi-item stack can overflow independently of an individual card.
         // Keep its 10px rail clear of the card's own rail and action hit regions.
@@ -2036,23 +2064,35 @@ fn notification_banner_content<'a>(
     let mut title_font = canopa_ui::font(appearance);
     title_font.weight = iced::font::Weight::Semibold;
     let mut content = column![].spacing(4).width(Length::Fill);
+    // The close button sits over the card's top corner: the source and title
+    // lines keep clear of it, the body uses the card's whole width.
+    let clear_of_close = iced::Padding {
+        right: 30.0,
+        ..iced::Padding::ZERO
+    };
     if banner_title(banner) != banner.app_name {
         content = content.push(
-            text(&banner.app_name)
-                .font(canopa_ui::font(appearance))
-                .size(appearance.typography().label_size.px())
-                .width(Length::Fill)
-                .style(canopa_ui::muted),
+            container(
+                text(&banner.app_name)
+                    .font(canopa_ui::font(appearance))
+                    .size(appearance.typography().label_size.px())
+                    .width(Length::Fill)
+                    .style(canopa_ui::muted),
+            )
+            .padding(clear_of_close),
         );
     }
     content = content
         .push(
-            text(banner_title(banner))
-                .font(title_font)
-                .size(banner_title_size(appearance))
-                .width(Length::Fill)
-                .line_height(iced::Pixels(banner_title_size(appearance) * 1.3))
-                .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
+            container(
+                text(banner_title(banner))
+                    .font(title_font)
+                    .size(banner_title_size(appearance))
+                    .width(Length::Fill)
+                    .line_height(iced::Pixels(banner_title_size(appearance) * 1.3))
+                    .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
+            )
+            .padding(clear_of_close),
         )
         .push(
             container(notification_body_widget(banner, appearance))
@@ -2104,7 +2144,12 @@ fn notification_banner_content<'a>(
     {
         header = header.push(notification_image_visual(image));
     }
-    let header = header.push(activate).push(dismiss);
+    let header = iced::widget::stack![
+        header.push(activate),
+        container(dismiss)
+            .width(Length::Fill)
+            .align_x(canopa_ui::direction::end()),
+    ];
 
     let mut card = column![header]
         .spacing(
@@ -2145,7 +2190,7 @@ fn notification_banner_content<'a>(
                     appearance.style(canopa_theme::UiKind::Notification),
                 );
                 frame.shadow = banner_shadow();
-                frame
+                glass_card(&appearance, frame)
             }
         })
         .into()
@@ -2194,6 +2239,8 @@ fn banner_actions_widget<'a>(
             } else {
                 Length::Fill
             });
+            // The application's first action leads; the others stay neutral.
+            let primary = single_action || (row_index == 0 && column_index == 0);
             let control = if custom {
                 control
             } else {
@@ -2201,31 +2248,33 @@ fn banner_actions_widget<'a>(
                     let colors = canopa_ui::colors(theme);
                     let engaged =
                         matches!(status, button::Status::Hovered | button::Status::Pressed);
-                    if single_action {
+                    if primary {
+                        // The leading action is filled, like the launcher's
+                        // Open: one clear thing to do.
                         let mut style = canopa_ui::action_style(
                             theme,
                             status,
-                            canopa_ui::Action::Normal,
+                            canopa_ui::Action::Primary,
                             false,
                         );
-                        style.background = Some(
-                            colors
-                                .accent
-                                .scale_alpha(if engaged { 0.25 } else { 0.13 })
-                                .into(),
-                        );
-                        style.border.color = colors.accent.scale_alpha(0.6);
+                        style.border.radius = 12.0.into();
                         return style;
                     }
+                    // A tonal button with a hairline edge: clearly a second
+                    // choice, never mistaken for the card behind it.
                     button::Style {
                         background: Some(
                             colors
                                 .text
-                                .scale_alpha(if engaged { 0.16 } else { 0.08 })
+                                .scale_alpha(if engaged { 0.20 } else { 0.13 })
                                 .into(),
                         ),
                         text_color: colors.text,
-                        border: iced::Border::default().rounded(12),
+                        border: iced::Border {
+                            color: colors.text.scale_alpha(0.18),
+                            width: 1.0,
+                            radius: 12.0.into(),
+                        },
                         ..Default::default()
                     }
                 })
@@ -2854,3 +2903,26 @@ fn banner_ui_style(_state: &BannerUiState, theme: &iced::Theme) -> iced::theme::
 
 const DENSE_BANNER_HEIGHT: u32 = 60;
 const BANNER_STACK_SPACING: u32 = 8;
+
+/// A banner card over the compositor's blur: an opaque default fill turns
+/// translucent and the default outline becomes a faint light edge. High
+/// contrast keeps the card opaque.
+fn glass_card(
+    appearance: &canopa_theme::Appearance,
+    mut frame: iced::widget::container::Style,
+) -> iced::widget::container::Style {
+    if appearance.high_contrast() {
+        return frame;
+    }
+    let dark = appearance.color_scheme == canopa_theme::ColorScheme::Dark;
+    if let Some(iced::Background::Color(color)) = frame.background
+        && color.a >= 0.999
+    {
+        frame.background = Some(color.scale_alpha(if dark { 0.78 } else { 0.84 }).into());
+    }
+    let palette = appearance.palette();
+    if frame.border.width > 0.0 && frame.border.color == canopa_ui::color(palette.border) {
+        frame.border.color = canopa_ui::color(palette.text).scale_alpha(0.24);
+    }
+    frame
+}

@@ -30,6 +30,8 @@ pub struct SurfaceState {
     /// Matches `BarConfig::name`. Empty (`""`) falls back to the first bar.
     pub bar_name: String,
     pub focused_module: Option<ModuleId>,
+    /// Focus arrived by keyboard navigation, so its ring is drawn.
+    pub focus_visible: bool,
     pub hovered_module: Option<ModuleId>,
     pub module_activated: bool,
     /// Module currently being dwelled on for tooltip purposes plus the
@@ -56,6 +58,7 @@ impl SurfaceState {
             output_name,
             bar_name,
             focused_module: None,
+            focus_visible: false,
             hovered_module: None,
             module_activated: false,
             tooltip_pending: None,

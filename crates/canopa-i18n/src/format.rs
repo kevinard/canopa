@@ -275,6 +275,26 @@ pub fn weekday_month_day_with(value: NaiveDate, length: Length) -> String {
     .unwrap_or_else(|| value.to_string())
 }
 
+/// A month and day in `length`: `Long` gives `November 12` (`12 novembre`).
+pub fn month_day(value: NaiveDate, length: Length) -> String {
+    let Some(input) = icu_date(value) else {
+        return value.format("%B %-d").to_string();
+    };
+    cached!(
+        Length,
+        std::sync::Arc<FixedCalendarDateTimeFormatter<Gregorian, fieldsets::MD>>,
+        length,
+        |length| FixedCalendarDateTimeFormatter::try_new(
+            time_locale(HourCycleChoice::Locale).into(),
+            fieldsets::MD::for_length(length)
+        )
+        .ok()
+        .map(std::sync::Arc::new)
+    )
+    .map(|f| f.format(&input).to_string())
+    .unwrap_or_else(|| value.format("%B %-d").to_string())
+}
+
 /// A short month and day (`Nov 12`; `12 nov.`), for compact clocks.
 pub fn month_day_short(value: NaiveDate) -> String {
     let Some(input) = icu_date(value) else {

@@ -776,7 +776,7 @@ async fn oversized_panel_projection_reports_error_and_recovers_without_deleting_
     let ProviderResponse::ReplaceContent { content, .. } =
         serde_json::from_str(&frame(&mut subscription)).unwrap();
     assert_eq!(content.error, None);
-    assert!(content.sections.is_empty());
+    assert!(content.sections.iter().all(|section| section.id == "empty"));
 }
 
 #[test]
@@ -885,7 +885,7 @@ async fn stalled_socket_writes_expire_but_healthy_idle_panels_keep_receiving_upd
         serde_json::from_str(&frame(&mut healthy)).unwrap();
     assert_eq!(content.error, None);
     assert!(
-        content.sections.is_empty(),
+        content.sections.iter().all(|section| section.id == "empty"),
         "healthy idle panel lost its subscription"
     );
 }
@@ -906,6 +906,9 @@ fn v5_provider_rejects_retired_actions_and_exits_on_close_or_stdin_eof() {
             request_activation_token: false,
             destructive: false,
             pressed: None,
+            secondary: false,
+            primary: false,
+            symbol: None,
             key: "opaque-action".into(),
             label: "Invoke".into(),
             value: Some("same-domain-value".into()),

@@ -157,7 +157,15 @@ async fn captured_center_action_cannot_invoke_a_reused_key_on_replacement_conten
     .unwrap();
     let mut signals = proxy.receive_signal("ActionInvoked").await.unwrap();
     let mut provider = Provider::start(&socket);
-    assert!(provider.next().await.sections.is_empty());
+    // An empty Center shows only its empty-state placeholder.
+    assert!(
+        provider
+            .next()
+            .await
+            .sections
+            .iter()
+            .all(|section| section.id == "empty")
+    );
     for transient in [false, true] {
         let mut wire_id = 0u32;
         let mut captured: Option<canopa_panel_protocol::PanelItem> = None;
@@ -331,7 +339,15 @@ async fn provider_marks_transient_items_and_routes_every_action_to_the_live_send
         .call::<_, _, ()>("CloseNotification", &(wire_id,))
         .await
         .unwrap();
-    assert!(provider.next().await.sections.is_empty());
+    // An empty Center shows only its empty-state placeholder.
+    assert!(
+        provider
+            .next()
+            .await
+            .sections
+            .iter()
+            .all(|section| section.id == "empty")
+    );
 }
 
 #[tokio::test]
@@ -425,7 +441,15 @@ async fn center_activation_controls_cannot_switch_meaning_after_replacement() {
     let mut closures = proxy.receive_signal("NotificationClosed").await.unwrap();
     let mut signals = proxy.receive_signal("ActionInvoked").await.unwrap();
     let mut provider = Provider::start(&socket);
-    assert!(provider.next().await.sections.is_empty());
+    // An empty Center shows only its empty-state placeholder.
+    assert!(
+        provider
+            .next()
+            .await
+            .sections
+            .iter()
+            .all(|section| section.id == "empty")
+    );
     for transient in [false, true] {
         for had_default in [false, true] {
             let mut wire_id = 0u32;
@@ -535,7 +559,15 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
     .unwrap();
     let mut closures = proxy.receive_signal("NotificationClosed").await.unwrap();
     let mut provider = Provider::start(&socket);
-    assert!(provider.next().await.sections.is_empty());
+    // An empty Center shows only its empty-state placeholder.
+    assert!(
+        provider
+            .next()
+            .await
+            .sections
+            .iter()
+            .all(|section| section.id == "empty")
+    );
     for transient in [true, false] {
         let wire_id: u32 = proxy
             .call(
@@ -583,7 +615,7 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
         );
         let after = provider.next().await;
         if transient {
-            assert!(after.sections.is_empty());
+            assert!(after.sections.iter().all(|section| section.id == "empty"));
         } else {
             let historical = &after.sections[0].items[0];
             assert_eq!(historical.id, item.id);

@@ -8,7 +8,7 @@ date and time questions, and keeps clipboard history and snippets.
 Open it with Super+Space, the **Search** button at the top of the bar, by typing in
 Niri's overview, or with `canopa-shell --toggle-menu Applications`. It opens in the
 bar's panel; `panel { launcher-width N; }` gives launcher menus their own width
-(580 logical pixels in the shipped layout).
+(612 logical pixels in the shipped layout).
 
 Any menu can use the launcher as its source:
 
@@ -28,8 +28,9 @@ menus {
 Type normally to search applications, open windows, controls, Settings pages,
 session actions and file/folder names.
 Choose a scope below the search field to narrow the current query. Choose **All**
-to search across sources again; its results carry the matching scope's icon at
-the row's end, so apps, files, windows and settings stay distinguishable. You can also type a scope directly, as in
+to search across sources again; its results are grouped under **Windows**,
+**Apps**, **Files** and **Settings** headings, in the order each kind's best match
+ranks, so the best match stays first. You can also type a scope directly, as in
 `apps firefox`, `windows notes`, `settings volume`, or `files budget`.
 The English scope keywords (`apps`, `files`, `windows`, `settings`, `clip`,
 `snip`, `emoji`, `symbol`) always work; the session language adds its own
@@ -37,15 +38,22 @@ The English scope keywords (`apps`, `files`, `windows`, `settings`, `clip`,
 `presse-papiers` in French. An extension with the same keyword keeps priority.
 Controls and session actions also match search words in the session language
 beside the English ones.
-Window rows show the application and workspace. Enter switches to the existing
+Window rows show the workspace and application (only the workspace when the
+window is titled like its application). Enter switches to the existing
 window and a secondary action can launch another instance. Up and Down select a
 result. Enter performs the selected result’s first action. Press Tab to filter the selected result’s
 actions. Click a result to run its primary action. A selected result with more
 than one action carries an Actions button (Tab) on its own row; the command bar
-shows the primary action and available shortcuts such as Copy path. In mixed
-results, a running application keeps the applications mark even though its first
-action switches to its window; only open-window rows carry the windows mark. A
-single application match can show its desktop-entry description.
+shows the primary action, and the others (such as Copy path) stay in Actions and
+on their Ctrl+digit keys. A running
+application stays under **Apps** even though its first action switches to its
+window; only open-window rows are listed under **Windows**, and an application
+whose window is listed there opens a **New window** from its row under **Apps**
+instead (one with a single main window is not repeated). Those two rows end with
+what each does, **Switch to window** or **New window**, and the command bar names
+what Enter does for the selected row. The search field counts the
+matches beside the query. A single application
+match can show its desktop-entry description.
 Ctrl+Enter performs its second action; Ctrl+1 through Ctrl+5 perform the respective
 named action. Escape clears a nonempty query, then closes on a second press.
 
@@ -62,13 +70,17 @@ removal of combining marks would. A built-in table covers precomposed Latin (inc
 modern Greek and Cyrillic letters; separate combining marks are dropped in any
 script. Letters that do not decompose, such as `ł`, `ø` or `đ`, stay distinct.
 Scripts without case, such as Chinese, Japanese and Korean, match as typed. The
-highlight in a result title covers the original characters that matched.
+highlight in a result title covers the original characters that matched,
+preferring the start of a word (`te` marks **Te**xt Editor, and No**te**s where
+no word starts with it).
 
 ### Browsing all apps
 
 With an empty query the launcher lists Pinned results first, then up to five
-Recent apps (from selection history, unless history is off), then every
-installed app from A to Z. The list scrolls and has no row limit; Up and Down
+Recent apps (from selection history, unless history is off), then every other
+installed app from A to Z, each group under its own heading,
+so no app is listed twice. Each row shows the app's name alone; searching adds
+what each match is. The list scrolls and has no row limit; Up and Down
 move through it. Typing `apps ` (or choosing the **Apps** scope) with no search
 term lists only the A–Z apps. Pin an app with **Pin in Launcher** in its actions
 (Tab); pins are stored with the launcher preferences in
@@ -140,7 +152,8 @@ error. Paths that are not valid UTF-8 open correctly but do not offer Copy path.
 ### Calculator
 
 Type `12 * (8 + 3)` to get `132`; no prefix is needed, and the result leads the
-other matches. `= 12 * (8 + 3)` does the same in explicit mode. Enter copies the
+other matches. The empty search field says so ("Search apps and files, or
+calculate 12 × 3"). `= 12 * (8 + 3)` does the same in explicit mode. Enter copies the
 result. Arithmetic supports `+`, `-`, `*`, `/`, `^`, parentheses, signed numbers, and
 decimal points or decimal commas, postfix `%`, `pi`, `e`, and the functions
 `sqrt`, `abs`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log10`, `exp`,
@@ -205,7 +218,7 @@ during ordinary search; explicit `=` mode explains it.
 Recognized calculations and bundled web/date answers lead. While searching,
 native application, window, file, control, Settings page and session results
 share 20 visible slots, ordered by match quality, then recent/frequent
-selection, then stable source order. Exact and prefix matches stay ahead of weaker
+selection, then stable source order, and are then grouped by kind as above. Exact and prefix matches stay ahead of weaker
 matches regardless of history. Each configured extension then contributes up to
 20 results in configuration order. Refine the query to narrow additional matches.
 Once you navigate, late results preserve the selected result's identity.

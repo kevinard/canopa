@@ -36,21 +36,30 @@ fn content(snapshot: &Snapshot, scanning: &HashSet<Path>, error: Option<&str>) -
             .sections
             .push(section("status", "", vec![item("unavailable", message)]));
     }
+    let several = snapshot.adapters.len() > 1;
     for adapter in &snapshot.adapters {
         let active_scan = scanning.contains(&adapter.path);
-        let mut radio = item(adapter.path.as_str(), adapter.label.as_str());
+        // The radio: a switch, and the search for devices to pair.
+        let title = if several {
+            adapter.label.clone()
+        } else {
+            fl!("shell-bluetooth-title")
+        };
+        let mut radio = item(adapter.path.as_str(), title);
         radio.body = Some(if active_scan {
             fl!("shell-bluetooth-searching")
         } else if adapter.powered {
-            fl!("shell-switch-on")
+            fl!("shell-bluetooth-visible-as", name = adapter.label.clone())
         } else {
             fl!("shell-switch-off")
         });
-        radio.actions.push(if adapter.powered {
-            PanelAction::new("off", fl!("shell-bluetooth-turn-off"))
-        } else {
-            PanelAction::new("on", fl!("shell-bluetooth-turn-on"))
-        });
+        radio.actions.push(
+            PanelAction::new(
+                if adapter.powered { "off" } else { "on" },
+                fl!("shell-bluetooth-title"),
+            )
+            .pressed(adapter.powered),
+        );
         if adapter.powered {
             radio.actions.push(if active_scan {
                 PanelAction::new("stop", fl!("shell-bluetooth-stop-searching"))
@@ -58,39 +67,81 @@ fn content(snapshot: &Snapshot, scanning: &HashSet<Path>, error: Option<&str>) -
                 PanelAction::new("scan", fl!("shell-bluetooth-find-devices"))
             });
         }
-        let mut items = vec![radio];
-        for device in snapshot
-            .devices
-            .iter()
-            .filter(|d| d.adapter == adapter.path && (active_scan || d.paired || d.connected))
-        {
-            let mut row = item(device.path.as_str(), device.label.as_str());
-            let (status, key, label) = if device.connected {
-                (
-                    fl!("shell-bluetooth-connected"),
-                    "disconnect",
-                    fl!("shell-bluetooth-disconnect"),
-                )
-            } else if device.paired {
-                (
-                    fl!("shell-bluetooth-paired"),
-                    "connect",
-                    fl!("shell-bluetooth-connect"),
-                )
-            } else {
-                (
-                    fl!("shell-bluetooth-available"),
-                    "pair",
-                    fl!("shell-bluetooth-pair"),
-                )
-            };
-            row.body = Some(status);
-            row.actions.push(PanelAction::new(key, label));
-            items.push(row);
-        }
         content
             .sections
-            .push(section(adapter.path.as_str(), "", items));
+            .push(section(adapter.path.as_str(), "", vec![radio]));
+        if !adapter.powered {
+            continue;
+        }
+        let devices: Vec<_> = snapshot
+            .devices
+            .iter()
+            .filter(|d| d.adapter == adapter.path)
+            .collect();
+        // Paired devices, connected first: connect or disconnect each.
+        let mut mine: Vec<PanelItem> = devices
+            .iter()
+            .filter(|d| d.paired || d.connected)
+            .map(|device| {
+                let mut row = item(device.path.as_str(), device.label.as_str());
+                let mut status = vec![if device.connected {
+                    fl!("shell-bluetooth-connected")
+                } else {
+                    fl!("shell-bluetooth-not-connected")
+                }];
+                if let Some(battery) = device.battery {
+                    status.push(fl!(
+                        "shell-bluetooth-battery",
+                        level = canopa_i18n::format::percent(f64::from(battery))
+                    ));
+                }
+                row.body = Some(status.join(" · "));
+                row.actions.push(if device.connected {
+                    PanelAction::new("disconnect", fl!("shell-bluetooth-disconnect"))
+                } else {
+                    PanelAction::new("connect", fl!("shell-bluetooth-connect"))
+                });
+                row
+            })
+            .collect();
+        if mine.is_empty() {
+            let mut empty = item(
+                format!("{}/none", adapter.path.as_str()),
+                fl!("shell-bluetooth-no-paired"),
+            );
+            empty.body = Some(fl!("shell-bluetooth-no-paired-hint"));
+            mine.push(empty);
+        }
+        content.sections.push(section(
+            &format!("{}/mine", adapter.path.as_str()),
+            &fl!("shell-bluetooth-my-devices"),
+            mine,
+        ));
+        // Devices in range that are not paired yet, while searching.
+        if active_scan {
+            let mut others: Vec<PanelItem> = devices
+                .iter()
+                .filter(|d| !d.paired && !d.connected)
+                .map(|device| {
+                    let mut row = item(device.path.as_str(), device.label.as_str());
+                    row.body = Some(fl!("shell-bluetooth-available"));
+                    row.actions
+                        .push(PanelAction::new("pair", fl!("shell-bluetooth-pair")));
+                    row
+                })
+                .collect();
+            if others.is_empty() {
+                others.push(item(
+                    format!("{}/searching", adapter.path.as_str()),
+                    fl!("shell-bluetooth-searching"),
+                ));
+            }
+            content.sections.push(section(
+                &format!("{}/others", adapter.path.as_str()),
+                &fl!("shell-bluetooth-other-devices"),
+                others,
+            ));
+        }
     }
     content
 }

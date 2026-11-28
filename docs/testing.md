@@ -95,6 +95,22 @@ privilege is needed beyond write access.
   already-built test binary by hand, use the directory containing that crate's
   `Cargo.toml` as the working directory and `CARGO_MANIFEST_DIR`.
 
+## Trying the working tree
+
+`bash scripts/try-nested-session.sh` builds the Shell, Notify and the wallpaper
+daemon in release mode, then opens a nested Niri window running them with a
+`foot` terminal, to try changes by hand. `--no-build` skips the build. The
+session is isolated from the one you are logged into: its own D-Bus session bus,
+runtime directory, configuration (the built-in defaults, not your
+`config.kdl`) and state (notification and launcher history). Your applications,
+icons, audio server and system bus are shared, so the Wi-Fi, Bluetooth and
+brightness controls change your real hardware. A generated calendar fills the
+agenda with events around today. Inside the window, Niri's Mod key is Alt.
+
+The compositor is the pinned fork that `scripts/build-niri.py` builds into
+`target/niri-fork` (the script prints the command when it is missing), or an
+absolute path in `CANOPA_NESTED_NIRI`. Logs go to the directory it prints.
+
 ## Native desktop tests
 
 Some behaviour can only be checked in a real compositor. These harnesses start a

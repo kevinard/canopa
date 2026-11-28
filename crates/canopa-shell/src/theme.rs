@@ -108,8 +108,13 @@ pub fn panel_scroll<'a, Message: 'a>(
         .style(|theme, status| {
             let mut style = scrollable::default(theme, status);
             let palette = canopa_ui::colors(theme);
+            // A quiet thumb at rest; brighter under the pointer.
+            let engaged = !matches!(status, scrollable::Status::Active { .. });
             style.vertical_rail.background = None;
-            style.vertical_rail.scroller.background = palette.muted.scale_alpha(0.65).into();
+            style.vertical_rail.scroller.background = palette
+                .muted
+                .scale_alpha(if engaged { 0.70 } else { 0.45 })
+                .into();
             style
         })
 }
@@ -207,11 +212,11 @@ pub fn menu_metrics_with_gap(gap: Option<canopa_theme::Pixels>) -> MenuMetrics {
 /// Launcher rows: browsing and results share one height, so typing never
 /// moves the list. `_browsing` is kept for callers that still distinguish them.
 pub fn launcher_menu_metrics(mut metrics: MenuMetrics, _browsing: bool) -> MenuMetrics {
-    let labels = (body_size() + label_size() + 3.0) * 1.12 + 5.0;
+    let labels = (body_size() + label_size() + 3.0) * 1.12 + 3.0;
     let padding = if metrics.row.custom_padding {
         metrics.row.padding.vertical()
     } else {
-        10.0
+        6.0
     };
     metrics.extent = labels.ceil().max(27.0)
         + padding
@@ -361,19 +366,19 @@ pub fn level_slider<'a, Message: Clone + 'a>(
         slider::Style {
             rail: slider::Rail {
                 backgrounds: (fill.into(), colors.text.scale_alpha(0.14).into()),
-                width: 6.0,
-                border: iced::Border::default().rounded(3),
+                width: 8.0,
+                border: iced::Border::default().rounded(4),
             },
             handle: slider::Handle {
                 shape: slider::HandleShape::Circle {
                     radius: if matches!(status, slider::Status::Active) {
-                        8.0
-                    } else {
                         9.0
+                    } else {
+                        10.5
                     },
                 },
-                background: colors.text.into(),
-                border_width: 3.0,
+                background: iced::Color::WHITE.into(),
+                border_width: 2.5,
                 border_color: fill,
             },
         }
@@ -415,10 +420,124 @@ pub fn ellipsize(text: &str, width: f32, size: f32) -> String {
     let mut chars: Vec<char> = text.chars().collect();
     while !chars.is_empty() {
         chars.pop();
-        let candidate: String = chars.iter().collect::<String>().trim_end().to_owned() + "…";
+        // Never end on a separator such as "Notes —…".
+        let candidate: String = chars
+            .iter()
+            .collect::<String>()
+            .trim_end_matches(|c: char| c.is_whitespace() || "—–-·:,;|/".contains(c))
+            .to_owned()
+            + "…";
         if text_width(&candidate, size) <= width {
             return candidate;
         }
     }
     "…".into()
+}
+
+/// How much of a glass surface's own fill covers the blurred background.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Glass {
+    /// The bar: the most see-through, it sits on the wallpaper beside windows.
+    Bar,
+    /// Panels, the launcher and drawers: text-heavy, so denser.
+    Panel,
+    /// Menus, tooltips, hover cards and the on-screen display.
+    Popover,
+}
+
+impl Glass {
+    fn opacity(self) -> f32 {
+        let dark = appearance().color_scheme == canopa_theme::ColorScheme::Dark;
+        match (self, dark) {
+            (Glass::Bar, true) => 0.56,
+            (Glass::Bar, false) => 0.66,
+            (Glass::Panel, true) => 0.72,
+            (Glass::Panel, false) => 0.78,
+            (Glass::Popover, true) => 0.78,
+            (Glass::Popover, false) => 0.84,
+        }
+    }
+}
+
+/// The fill a glass surface of `kind` shows over its blur, for overlays such as
+/// fades that blend into it.
+pub fn glass_fill(kind: Glass) -> iced::Color {
+    let ui = ui(match kind {
+        Glass::Bar => canopa_theme::UiKind::Bar,
+        Glass::Panel => canopa_theme::UiKind::Panel,
+        Glass::Popover => canopa_theme::UiKind::Menu,
+    });
+    let background = match canopa_ui::frame(&appearance(), ui).background {
+        Some(iced::Background::Color(color)) => color,
+        _ => palette().background,
+    };
+    if glass_enabled() && background.a >= 0.999 {
+        background.scale_alpha(kind.opacity())
+    } else {
+        background
+    }
+}
+
+/// Whether surfaces are drawn as translucent glass. High contrast keeps every
+/// surface opaque.
+pub fn glass_enabled() -> bool {
+    !appearance().high_contrast()
+}
+
+/// A glass version of a surface's frame: an opaque fill becomes translucent
+/// for the compositor's blur to show through, and the default outline becomes
+/// a faint light edge. Configured translucent fills are kept as they are.
+pub fn glass(
+    mut style: iced::widget::container::Style,
+    kind: Glass,
+) -> iced::widget::container::Style {
+    if !glass_enabled() {
+        return style;
+    }
+    if let Some(iced::Background::Color(color)) = style.background
+        && color.a >= 0.999
+    {
+        style.background = Some(color.scale_alpha(kind.opacity()).into());
+    }
+    let palette = palette();
+    if style.border.width > 0.0 && style.border.color == palette.border {
+        style.border.color = palette.text.scale_alpha(0.24);
+    }
+    // Panels cast a soft shadow into the transparent margin kept around them.
+    // The bar sits on the wallpaper, and popovers fill their surfaces exactly,
+    // so a shadow there would be cut off square.
+    style.shadow = match kind {
+        Glass::Bar | Glass::Popover => iced::Shadow::default(),
+        Glass::Panel => iced::Shadow {
+            color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.32),
+            offset: iced::Vector::new(0.0, 6.0),
+            blur_radius: 22.0,
+        },
+    };
+    style
+}
+
+/// Report a glass surface's shape so the compositor blurs behind it.
+pub fn glass_region<'a>(
+    content: impl Into<iced::Element<'a, crate::app::Message>>,
+    radius: [canopa_theme::Pixels; 4],
+) -> iced::Element<'a, crate::app::Message> {
+    glass_region_visible(content, radius, true)
+}
+
+/// [`glass_region`] that drops its blur while `visible` is false.
+pub fn glass_region_visible<'a>(
+    content: impl Into<iced::Element<'a, crate::app::Message>>,
+    radius: [canopa_theme::Pixels; 4],
+    visible: bool,
+) -> iced::Element<'a, crate::app::Message> {
+    if !glass_enabled() {
+        return content.into();
+    }
+    canopa_ui::glass::region(content, radius.map(|r| r.px()), visible, |shape| {
+        crate::app::Message::Glass {
+            window: None,
+            shape,
+        }
+    })
 }

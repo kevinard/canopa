@@ -28,6 +28,9 @@ pub(crate) struct TaskbarEntry {
     pub layout_order: Vec<u64>,
     pub focused: bool,
     pub urgent: bool,
+    /// The first running application after the pinned ones: a short divider
+    /// sets the two groups apart.
+    pub after_pinned: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +68,10 @@ pub(crate) enum MenuCommand {
     DesktopAction(String),
     Pin,
     Unpin,
+    /// Quit the application: ask each of its windows to close (Shell ADR 0029).
+    Quit,
+    /// The application's name heading the menu; choosing it does nothing.
+    Heading,
 }
 
 /// A row of the menu; `None` is a separator.
@@ -82,6 +89,9 @@ pub(crate) fn menu(entry: &TaskbarEntry, application: Option<&DesktopApplication
     };
     let running = !entry.windows.is_empty();
     let mut actions: Vec<_> = app.actions.iter().collect();
+    // The menu names the application it acts on.
+    rows.push(Some((app.name.clone(), MenuCommand::Heading)));
+    rows.push(None);
     if !running {
         rows.push(Some((fl!("shell-taskbar-open"), MenuCommand::Launch)));
     } else if !app.single_main_window {
@@ -92,7 +102,8 @@ pub(crate) fn menu(entry: &TaskbarEntry, application: Option<&DesktopApplication
         rows.push(Some((fl!("shell-taskbar-new-window"), command)));
     }
     if !actions.is_empty() {
-        if !rows.is_empty() {
+        // Below a launch row, the desktop actions form their own group.
+        if rows.len() > 2 {
             rows.push(None);
         }
         rows.extend(actions.into_iter().map(|action| {
@@ -102,14 +113,23 @@ pub(crate) fn menu(entry: &TaskbarEntry, application: Option<&DesktopApplication
             ))
         }));
     }
-    if !rows.is_empty() {
-        rows.push(None);
-    }
     rows.push(Some(if entry.pinned {
         (fl!("shell-taskbar-unpin"), MenuCommand::Unpin)
     } else {
         (fl!("shell-taskbar-pin"), MenuCommand::Pin)
     }));
+    // A running application can be quit; single windows close from the
+    // hover card (Shell ADR 0029).
+    // It stands apart after a divider; with several windows, the label says
+    // it closes them all.
+    if running {
+        let label = match entry.windows.len() {
+            1 => fl!("shell-taskbar-quit"),
+            count => fl!("shell-taskbar-quit-windows", count = count),
+        };
+        rows.push(None);
+        rows.push(Some((label, MenuCommand::Quit)));
+    }
     rows
 }
 
@@ -131,11 +151,22 @@ pub(crate) fn menu_tree(
                     .as_ref()
                     .map(|(label, _)| label.clone())
                     .unwrap_or_default(),
-                enabled: row.is_some(),
+                enabled: row
+                    .as_ref()
+                    .is_some_and(|(_, command)| *command != MenuCommand::Heading),
                 visible: true,
                 icon_name: None,
                 children: Vec::new(),
                 is_separator: row.is_none(),
+                emphasis: match row {
+                    Some((_, MenuCommand::Heading)) => {
+                        crate::surface::menu_popup::MenuEmphasis::Heading
+                    }
+                    Some((_, MenuCommand::Quit)) => {
+                        crate::surface::menu_popup::MenuEmphasis::Destructive
+                    }
+                    _ => crate::surface::menu_popup::MenuEmphasis::Normal,
+                },
                 toggle: None,
             })
             .collect(),
@@ -333,6 +364,11 @@ pub(crate) fn entries(
             (std::cmp::Reverse(stamp), *id)
         });
     }
+    if let Some(first) = entries.iter().position(|entry| !entry.pinned)
+        && first > 0
+    {
+        entries[first].after_pinned = true;
+    }
     entries
 }
 
@@ -348,6 +384,7 @@ fn entry_for(key: String, application: Option<&DesktopApplication>, pinned: bool
         // Resolved by the caller, which caches icon theme lookups.
         icon: None,
         pinned,
+        after_pinned: false,
         windows: Vec::new(),
         layout_order: Vec::new(),
         focused: false,
@@ -461,9 +498,9 @@ impl TaskbarItemModule {
         )
     }
 
-    /// A running application shows as a short stroke on the bar's screen edge,
-    /// several windows as a longer one; the focused application's stroke is the
-    /// longest, in the accent. One shape, three clearly different lengths.
+    /// A running application shows as a dot on the bar's screen edge, several
+    /// windows as a short pill; the focused application's is a long pill in the
+    /// accent. Three clearly different shapes.
     fn indicator(&self, horizontal: bool) -> iced::Element<'static, crate::app::Message> {
         let colors = crate::theme::palette();
         let count = self.entry.windows.len();
@@ -475,17 +512,14 @@ impl TaskbarItemModule {
         } else if self.entry.focused {
             colors.accent
         } else {
-            iced::Color {
-                a: 0.68,
-                ..colors.text
-            }
+            colors.text
         };
         let (long, short) = if self.entry.focused {
-            (24.0, 4.0)
+            (24.0, 5.0)
         } else if count > 1 {
-            (18.0, 3.0)
+            (14.0, 6.0)
         } else {
-            (9.0, 3.0)
+            (6.0, 6.0)
         };
         let (width, height) = if horizontal {
             (long, short)
@@ -511,16 +545,12 @@ impl TaskbarItemModule {
         use crate::config::Edge;
         use iced::Alignment;
         let horizontal = matches!(edge, Edge::Top | Edge::Bottom);
-        let focused = self.entry.focused;
-        let accent = crate::theme::palette().accent;
+        // One marker carries an application's state, beside its icon: a dot
+        // while it runs, a short pill with several windows, a long accent pill
+        // while focused. The icon's own plate is left to pointer hover.
         let icon = iced::widget::container(self.icon(APP_ICON_SIZE))
             .center_x(iced::Length::Fixed(CELL - 6.0))
-            .center_y(iced::Length::Fixed(CELL - 6.0))
-            .style(move |_| iced::widget::container::Style {
-                background: focused.then_some(accent.scale_alpha(0.14).into()),
-                border: iced::border::rounded(11),
-                ..Default::default()
-            });
+            .center_y(iced::Length::Fixed(CELL - 6.0));
         let icon = iced::widget::container(icon)
             .center_x(iced::Length::Fill)
             .center_y(CELL);
@@ -538,7 +568,33 @@ impl TaskbarItemModule {
             .align_x(align_x)
             .align_y(align_y);
         let key = self.entry.key.clone();
-        let cell = iced::widget::stack![icon, indicator];
+        let mut cell = iced::widget::stack![icon, indicator];
+        // Running applications start after a short divider below the pinned ones.
+        if self.entry.after_pinned {
+            let rule = iced::widget::container(iced::widget::Space::new())
+                .width(if horizontal { 1.5 } else { 22.0 })
+                .height(if horizontal { 22.0 } else { 1.5 })
+                .style(|_| {
+                    iced::widget::container::Style::default()
+                        .background(crate::theme::palette().text.scale_alpha(0.32))
+                        .border(iced::Border::default().rounded(1))
+                });
+            cell = cell.push(
+                iced::widget::container(rule)
+                    .width(iced::Length::Fill)
+                    .height(CELL)
+                    .align_x(if horizontal {
+                        Alignment::Start
+                    } else {
+                        Alignment::Center
+                    })
+                    .align_y(if horizontal {
+                        Alignment::Center
+                    } else {
+                        Alignment::Start
+                    }),
+            );
+        }
         let cell: iced::Element<'static, crate::app::Message> = if horizontal {
             iced::widget::container(cell).width(CELL).into()
         } else {
@@ -825,6 +881,12 @@ mod tests {
         assert!(entries[0].pinned && entries[0].windows.is_empty());
         assert_eq!(entries[2].windows, [9, 4], "most recently focused first");
         assert!(entries[2].focused && !entries[1].focused);
+        let dividers: Vec<_> = entries.iter().map(|entry| entry.after_pinned).collect();
+        assert_eq!(
+            dividers,
+            [false, true, false],
+            "a divider before running apps"
+        );
     }
 
     #[test]
@@ -848,6 +910,7 @@ mod tests {
             layout_order: Vec::new(),
             focused: true,
             urgent: false,
+            after_pinned: false,
         };
         assert_eq!(window_to_focus(&entry, Some(4)), Some(6));
         assert_eq!(window_to_focus(&entry, Some(9)), Some(4));
@@ -931,6 +994,7 @@ mod tests {
             windows,
             focused: false,
             urgent: false,
+            after_pinned: false,
         }
     }
 
@@ -952,8 +1016,18 @@ mod tests {
         }
     }
 
+    /// The rows below the application's heading.
     fn commands(rows: &[MenuRow]) -> Vec<Option<MenuCommand>> {
+        assert_eq!(
+            rows.first()
+                .and_then(|row| row.as_ref())
+                .map(|(_, command)| command),
+            Some(&MenuCommand::Heading),
+            "menus are headed by their application"
+        );
+        assert!(rows[1].is_none(), "a divider sets the heading apart");
         rows.iter()
+            .skip(2)
             .map(|row| row.as_ref().map(|(_, command)| command.clone()))
             .collect()
     }
@@ -968,17 +1042,18 @@ mod tests {
                 Some(MenuCommand::DesktopAction("new-window".into())),
                 None,
                 Some(MenuCommand::DesktopAction("new-private".into())),
-                None,
                 Some(MenuCommand::Pin),
+                None,
+                Some(MenuCommand::Quit),
             ],
             "the entry's own new-window action stands in for a launch"
         );
-        assert_eq!(rows[0].as_ref().unwrap().0, fl!("shell-taskbar-new-window"));
+        assert_eq!(rows[2].as_ref().unwrap().0, fl!("shell-taskbar-new-window"));
 
         let rows = menu(&entry(vec![], true), Some(&editor(&[], false)));
         assert_eq!(
             commands(&rows),
-            [Some(MenuCommand::Launch), None, Some(MenuCommand::Unpin)],
+            [Some(MenuCommand::Launch), Some(MenuCommand::Unpin)],
             "nothing runs, so the first row opens the application"
         );
 
@@ -987,8 +1062,9 @@ mod tests {
             commands(&rows),
             [
                 Some(MenuCommand::DesktopAction("new-window".into())),
-                None,
                 Some(MenuCommand::Unpin),
+                None,
+                Some(MenuCommand::Quit),
             ],
             "a single-main-window application keeps its actions but no generic New window"
         );
@@ -1035,10 +1111,11 @@ mod tests {
             commands(&rows),
             [
                 Some(MenuCommand::DesktopAction("new-window".into())),
-                None,
                 Some(MenuCommand::Unpin),
+                None,
+                Some(MenuCommand::Quit),
             ],
-            "titlebars own widths, pinning, floating and tabs"
+            "titlebars own widths, pinning, floating and tabs; the application can be quit"
         );
     }
 
@@ -1048,8 +1125,16 @@ mod tests {
         let tree = menu_tree(&rows, (5, 6), (800, 600));
         assert_eq!(tree.items.len(), rows.len());
         assert_eq!(tree.items[0].id, "0");
-        assert!(tree.items[1].is_separator && !tree.items[1].enabled);
-        assert_eq!(tree.items[2].label, "Action a");
+        // The application's name heads the menu without being a choice.
+        assert!(!tree.items[0].enabled);
+        assert_eq!(
+            tree.items[0].emphasis,
+            crate::surface::menu_popup::MenuEmphasis::Heading
+        );
+        assert!(tree.items[1].is_separator);
+        assert_eq!(tree.items[2].label, fl!("shell-taskbar-open"));
+        assert!(tree.items[3].is_separator && !tree.items[3].enabled);
+        assert_eq!(tree.items[4].label, "Action a");
         assert_eq!((tree.anchor, tree.screen_size), ((5, 6), (800, 600)));
     }
 

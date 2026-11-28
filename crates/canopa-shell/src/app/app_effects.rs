@@ -89,9 +89,10 @@ pub(super) fn app_effects_for_foreground(
         ForegroundEffect::OpenMenuWindow { request } => Some(vec![AppEffect::OpenMenuWindow {
             request: request.clone(),
         }]),
-        // Taskbar menus are the Shell's own; only DBusMenus hear "closed".
+        // Taskbar and workspace menus are the Shell's own; only DBusMenus
+        // hear "closed".
         ForegroundEffect::CloseMenu { window, meta }
-            if meta.service == crate::modules::taskbar::MENU_SERVICE =>
+            if crate::surface::menu_popup::is_shell_menu(&meta.service) =>
         {
             Some(vec![AppEffect::RemoveWindow(*window)])
         }
@@ -360,6 +361,18 @@ impl App {
         target_module: crate::modules::ModuleId,
         tree: crate::surface::tooltip_popup::TooltipTree,
     ) -> Vec<Task<Message>> {
+        // A menu owns the pointer's attention: no tooltip or card covers it.
+        // Nor does one appear over a panel that is still opening.
+        if self.foreground.active_menu_window().is_some()
+            || self.foreground.active_panel_window().is_some_and(|panel| {
+                !matches!(
+                    self.foreground.panel_presentation(panel),
+                    crate::surface::panel_motion::Presentation::Still
+                )
+            })
+        {
+            return Vec::new();
+        }
         let settings = self.tooltip_window_settings(target_window, &tree);
         let (popup_wid, open_task) = Message::layershell_open(settings);
         let effects = self

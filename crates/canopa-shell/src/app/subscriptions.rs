@@ -79,7 +79,7 @@ impl App {
             if let Some(meta) = self
                 .foreground
                 .active_menu_meta()
-                .filter(|meta| meta.service != crate::modules::taskbar::MENU_SERVICE)
+                .filter(|meta| !crate::surface::menu_popup::is_shell_menu(&meta.service))
             {
                 crate::dbus::sni::menu_layout_subscription(
                     conn,

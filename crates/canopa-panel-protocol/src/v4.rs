@@ -393,6 +393,21 @@ pub struct PanelAction {
     /// Hosts may draw it as a pressed toggle. Older hosts ignore it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pressed: Option<bool>,
+    /// A view or settings action rather than one on the content (grouping,
+    /// settings): hosts may set it apart from the primary actions. Older
+    /// hosts ignore it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub secondary: bool,
+    /// The item's main action (a notification's first own action): hosts may
+    /// fill it. Older hosts ignore it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub primary: bool,
+    /// A symbolic icon name (`preferences-system-symbolic`,
+    /// `view-group-symbolic`) for a view or settings action: a host that draws
+    /// that symbol may show the action as an icon button, with its label as the
+    /// tooltip and accessible name. Older hosts ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -408,7 +423,25 @@ impl PanelAction {
             request_activation_token: false,
             destructive: false,
             pressed: None,
+            secondary: false,
+            primary: false,
+            symbol: None,
         }
+    }
+
+    pub fn secondary(mut self) -> Self {
+        self.secondary = true;
+        self
+    }
+
+    pub fn primary(mut self) -> Self {
+        self.primary = true;
+        self
+    }
+
+    pub fn symbol(mut self, name: impl Into<String>) -> Self {
+        self.symbol = Some(name.into());
+        self
     }
 
     pub fn destructive(mut self) -> Self {
@@ -432,8 +465,16 @@ fn validate_actions<'a>(
 ) -> Result<(), InvalidPanelContent> {
     let mut keys = std::collections::HashSet::new();
     for action in actions {
+        let valid_symbol = action.symbol.as_ref().is_none_or(|name| {
+            !name.is_empty()
+                && name.len() <= 255
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        });
         if action.key.is_empty()
             || action.label.is_empty()
+            || !valid_symbol
             || !keys.insert((&action.key, &action.value))
         {
             return Err(InvalidPanelContent);
@@ -500,10 +541,35 @@ mod tests {
             value: Some("revision-owned-target".into()),
             destructive: false,
             pressed: None,
+            secondary: false,
+            primary: false,
+            symbol: None,
         });
         assert!(
             content.validate().is_err(),
             "link and item controls must not collide"
+        );
+    }
+
+    #[test]
+    fn action_symbols_serialize_only_when_set_and_must_be_icon_names() {
+        let plain = PanelAction::new("settings", "Settings");
+        assert!(!serde_json::to_string(&plain).unwrap().contains("symbol"));
+        let mut content = PanelContent::error("Panel", "unused");
+        content.error = None;
+        content
+            .actions
+            .push(plain.secondary().symbol("preferences-system-symbolic"));
+        content.validate().unwrap();
+        let encoded = serde_json::to_value(&content).unwrap();
+        assert_eq!(
+            encoded["actions"][0]["symbol"],
+            "preferences-system-symbolic"
+        );
+        content.actions[0].symbol = Some("../icons/gear".into());
+        assert!(
+            content.validate().is_err(),
+            "a symbol is a name, not a path"
         );
     }
 

@@ -186,7 +186,7 @@ impl Session {
             })
             .map(|s| {
                 self.entry(
-                    usize::MAX - 5,
+                    super::PROVIDER_PINNED,
                     ResultItem {
                         id: s.target.key(),
                         label: if !s.alias.is_empty() && s.alias.eq_ignore_ascii_case(text) {

@@ -79,6 +79,80 @@ pub struct Target {
     /// The description says the match is approximate (shown muted).
     pub(super) approximate: bool,
     pub thumbnail: Option<iced::widget::image::Handle>,
+    /// The heading of the group the row belongs to in a sectioned list.
+    pub(super) section: Option<Section>,
+}
+
+/// Groups of the launcher list: pinned, recent and all apps while browsing; what
+/// choosing a result does while searching everything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum Section {
+    Pinned,
+    Recent,
+    AllApps,
+    Windows,
+    Apps,
+    Files,
+    Settings,
+}
+
+impl Section {
+    pub(super) fn label(self) -> String {
+        match self {
+            Self::Pinned => fl!("shell-launcher-section-pinned"),
+            Self::Recent => fl!("shell-launcher-section-recent"),
+            Self::AllApps => fl!("shell-launcher-section-all-apps"),
+            Self::Windows => fl!("shell-launcher-section-windows"),
+            Self::Apps => fl!("shell-launcher-section-apps"),
+            Self::Files => fl!("shell-launcher-section-files"),
+            Self::Settings => fl!("shell-launcher-section-settings"),
+        }
+    }
+
+    /// What choosing a search result does: switch to a window, start an app, open a
+    /// file or a setting.
+    pub(super) fn of_result(target: &Target) -> Option<Self> {
+        if target.result.id.starts_with("window:") {
+            return Some(Self::Windows);
+        }
+        match &target.result.actions.first()?.action {
+            Action::Application { .. }
+            | Action::AppActionLaunch { .. }
+            | Action::Launch { .. }
+            | Action::FocusWindow { .. } => Some(Self::Apps),
+            Action::Open { .. }
+            | Action::Reveal { .. }
+            | Action::Preview { .. }
+            | Action::ChooseApplication { .. }
+            | Action::OpenWith { .. } => Some(Self::Files),
+            Action::Provider { .. } | Action::SettingsPage { .. } => Some(Self::Settings),
+            _ => None,
+        }
+    }
+}
+
+/// Height a section heading adds above the first row of its group.
+pub(super) const SECTION_HEADING_HEIGHT: f32 = 34.0;
+
+/// Rows that start a new section after the first one: each gets a heading above it.
+/// The first section's name heads the whole list.
+pub(super) fn section_starts(entries: &[PanelMenuEntry]) -> Vec<usize> {
+    let section = |entry: &PanelMenuEntry| match &entry.target {
+        PanelMenuEntryTarget::Launcher(target) => target.section,
+        _ => None,
+    };
+    (1..entries.len())
+        .filter(|&index| {
+            let current = section(&entries[index]);
+            current.is_some() && current != section(&entries[index - 1])
+        })
+        .collect()
+}
+
+fn set_section(entry: &mut PanelMenuEntry, section: Option<Section>) {
+    if let PanelMenuEntryTarget::Launcher(target) = &mut entry.target {
+        target.section = section;
+    }
 }
 
 impl Target {
@@ -196,7 +270,8 @@ pub(super) struct Session {
 }
 
 /// Providers of native rows, for result identity.
-const PROVIDER_RECENT: usize = usize::MAX - 6;
+pub(super) const PROVIDER_PINNED: usize = usize::MAX - 5;
+pub(super) const PROVIDER_RECENT: usize = usize::MAX - 6;
 const PROVIDER_SESSION: usize = usize::MAX - 7;
 const PROVIDER_SETTINGS_PAGES: usize = usize::MAX - 8;
 const PROVIDER_DESKTOP_ACTIONS: usize = usize::MAX - 9;
@@ -647,7 +722,22 @@ impl Session {
             && matches!(scope, Scope::All | Scope::Apps)
             && super::panel_search::is_blank_query(text)
         {
-            entries.extend(self.browse_entries(scope == Scope::All));
+            let mut browse = self.browse_entries(scope == Scope::All);
+            if scope == Scope::All {
+                for entry in &mut browse {
+                    let PanelMenuEntryTarget::Launcher(target) = &entry.target else {
+                        continue;
+                    };
+                    let section = match target.provider {
+                        PROVIDER_PINNED => Some(Section::Pinned),
+                        PROVIDER_RECENT => Some(Section::Recent),
+                        usize::MAX => Some(Section::AllApps),
+                        _ => None,
+                    };
+                    set_section(entry, section);
+                }
+            }
+            entries.extend(browse);
             return entries;
         }
         let mut native = self.shortcut_entries();
@@ -819,12 +909,83 @@ impl Session {
                 .and_then(|a| personalization::saved_target(&a.action))
                 .is_none_or(|target| seen.insert(target.key()))
         });
-        entries.extend(
-            ranked
-                .into_iter()
-                .take(launcher::RESULT_LIMIT)
-                .map(|(_, entry)| entry),
-        );
+        let mut ranked: Vec<_> = ranked.into_iter().map(|(_, entry)| entry).collect();
+        // Searching everything groups results by what choosing them does, in the
+        // order each kind first ranks: the best match stays first.
+        if scope == Scope::All {
+            // A running app whose window is listed already would only switch to
+            // that window too: its row opens a new window instead, or leaves
+            // when the app keeps a single main window.
+            let listed_windows: std::collections::HashSet<String> = ranked
+                .iter()
+                .filter_map(|entry| match &entry.target {
+                    PanelMenuEntryTarget::Launcher(target)
+                        if target.result.id.starts_with("window:") =>
+                    {
+                        match &target.result.actions.first()?.action {
+                            Action::FocusWindow {
+                                application: Some(application),
+                                ..
+                            } => Some(application.clone()),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                })
+                .collect();
+            ranked.retain_mut(|entry| {
+                let PanelMenuEntryTarget::Launcher(target) = &mut entry.target else {
+                    return true;
+                };
+                if target.result.id.starts_with("window:") {
+                    return true;
+                }
+                let listed = matches!(
+                    target.result.actions.first().map(|named| &named.action),
+                    Some(Action::FocusWindow {
+                        application: Some(application),
+                        ..
+                    }) if listed_windows.contains(application)
+                );
+                if !listed {
+                    return true;
+                }
+                let opens_window = target.result.actions.get(1).is_some_and(|named| {
+                    matches!(
+                        named.action,
+                        Action::Application { .. } | Action::AppActionLaunch { .. }
+                    )
+                });
+                if !opens_window {
+                    return false;
+                }
+                let mut result = (*target.result).clone();
+                result.actions.swap(0, 1);
+                target.result = Arc::new(result);
+                true
+            });
+            ranked.truncate(launcher::RESULT_LIMIT);
+            let mut order = Vec::new();
+            for entry in &mut ranked {
+                let PanelMenuEntryTarget::Launcher(target) = &entry.target else {
+                    continue;
+                };
+                let section = Section::of_result(target);
+                if !order.contains(&section) {
+                    order.push(section);
+                }
+                set_section(entry, section);
+            }
+            ranked.sort_by_key(|entry| match &entry.target {
+                PanelMenuEntryTarget::Launcher(target) => order
+                    .iter()
+                    .position(|section| *section == target.section)
+                    .unwrap_or(usize::MAX),
+                _ => usize::MAX,
+            });
+        }
+        ranked.truncate(launcher::RESULT_LIMIT);
+        entries.extend(ranked);
         if self.open_with.is_none() {
             for (provider, batch) in &self.batches {
                 if *provider > 1
@@ -940,6 +1101,7 @@ impl Session {
     /// The empty-query list: pins and recent apps, then every app A–Z.
     fn browse_entries(&self, suggestions: bool) -> Vec<PanelMenuEntry> {
         let mut rows = Vec::new();
+        let mut shown = std::collections::HashSet::new();
         if suggestions {
             rows.extend(self.shortcut_entries());
             let pinned: std::collections::HashSet<_> = self
@@ -952,41 +1114,40 @@ impl Session {
                     _ => None,
                 })
                 .collect();
+            shown.extend(pinned.iter().map(|id| id.to_string()));
             let recent = if self.config.history {
                 self.history.recent_applications()
             } else {
                 Vec::new()
             };
-            let recent_label = fl!("shell-launcher-recent");
-            rows.extend(
-                recent
-                    .into_iter()
-                    .filter(|id| !pinned.contains(id))
-                    .filter_map(|id| {
-                        self.app_results.iter().find(|entry| {
-                            matches!(&entry.target, PanelMenuEntryTarget::InstalledApp(app) if app == id)
-                        })
+            let recent_rows: Vec<_> = recent
+                .into_iter()
+                .filter(|id| !pinned.contains(id))
+                .filter_map(|id| {
+                    self.app_results.iter().find(|entry| {
+                        matches!(&entry.target, PanelMenuEntryTarget::InstalledApp(app) if app == id)
                     })
-                    .take(RECENT_LIMIT)
-                    .map(|entry| {
-                        let PanelMenuEntryTarget::InstalledApp(id) = &entry.target else {
-                            unreachable!()
-                        };
-                        self.installed_row(
-                            entry,
-                            "",
-                            PROVIDER_RECENT,
-                            format!("recent:{id}"),
-                            Some(recent_label.as_str()),
-                        )
-                    }),
-            );
+                })
+                .take(RECENT_LIMIT)
+                .map(|entry| {
+                    let PanelMenuEntryTarget::InstalledApp(id) = &entry.target else {
+                        unreachable!()
+                    };
+                    // Its description stays; a "Recent" chip marks the group.
+                    shown.insert(id.clone());
+                    self.installed_row(entry, "", PROVIDER_RECENT, format!("recent:{id}"), None)
+                })
+                .collect();
+            rows.extend(recent_rows);
         }
+        // Every other application once, alphabetically: pinned and recent
+        // ones are already listed above.
         rows.extend(self.app_results.iter().filter_map(|entry| {
             let PanelMenuEntryTarget::InstalledApp(id) = &entry.target else {
                 return None;
             };
-            Some(self.installed_row(entry, "", usize::MAX, id.clone(), None))
+            (!shown.contains(id))
+                .then(|| self.installed_row(entry, "", usize::MAX, id.clone(), None))
         }));
         rows
     }
@@ -1071,6 +1232,7 @@ impl Session {
                 display_detail,
                 approximate: false,
                 thumbnail: None,
+                section: None,
             }),
             is_submenu: false,
         }
@@ -2681,19 +2843,69 @@ mod tests {
         session.set_preferences(Arc::new(preferences), None);
         session.search_changed("");
         let entries = session.entries();
-        // One pin, one recent (the pinned app is not repeated), then all 30.
-        assert_eq!(entries.len(), 32);
+        // One pin, one recent (the pinned app is not repeated), then the
+        // other 28 once each.
+        assert_eq!(entries.len(), 30);
         assert_eq!(entries[0].label, "App 07");
         let PanelMenuEntryTarget::Launcher(recent) = &entries[1].target else {
             panic!()
         };
         assert_eq!(entries[1].label, "App 03");
-        assert_eq!(recent.display_description.as_deref(), Some("Recent"));
+        assert_eq!(recent.provider, PROVIDER_RECENT);
         let names: Vec<_> = entries[2..].iter().map(|e| e.label.clone()).collect();
         let mut sorted = names.clone();
         sorted.sort();
         assert_eq!(names, sorted);
-        assert_eq!(names.len(), 30);
+        assert_eq!(names.len(), 28);
+        assert!(!names.contains(&"App 07".to_string()) && !names.contains(&"App 03".to_string()));
+        // Pinned heads the list; Recent and All apps each get a heading.
+        let section = |entry: &PanelMenuEntry| match &entry.target {
+            PanelMenuEntryTarget::Launcher(target) => target.section,
+            _ => None,
+        };
+        assert_eq!(section(&entries[0]), Some(Section::Pinned));
+        assert_eq!(section(&entries[1]), Some(Section::Recent));
+        assert!(
+            entries[2..]
+                .iter()
+                .all(|e| section(e) == Some(Section::AllApps))
+        );
+        assert_eq!(section_starts(&entries), [1, 2]);
+
+        // Searching everything groups apps and their windows apart, best first.
+        session.apply(Event::Context {
+            session: session.id,
+            windows: vec![crate::launcher::windows::Window {
+                id: 9,
+                title: "App 12 window".into(),
+                application: Some("app12.desktop".into()),
+                workspace: "Workspace 1".into(),
+            }],
+            history: runtime.snapshot.clone(),
+            error: None,
+        });
+        session.search_changed("app 1");
+        let entries = session.entries();
+        let sections: Vec<_> = entries.iter().map(section).collect();
+        let first = sections[0];
+        let split = sections
+            .iter()
+            .position(|s| *s != first)
+            .unwrap_or(sections.len());
+        assert!(
+            sections[split..].iter().all(|s| *s != first),
+            "{sections:?}"
+        );
+        assert!(sections.contains(&Some(Section::Windows)), "{sections:?}");
+        assert!(sections.contains(&Some(Section::Apps)), "{sections:?}");
+        // The running app's row opens a new window; its window row switches.
+        let labels: Vec<_> = entries.iter().map(|entry| entry.label.as_str()).collect();
+        assert!(labels.contains(&"App 12 window"), "{labels:?}");
+        let app = entries
+            .iter()
+            .find(|entry| entry.label == "App 12")
+            .unwrap();
+        assert!(matches!(primary(app), Action::Application { .. }));
 
         session.search_changed("apps ");
         assert_eq!(session.entries().len(), 30);

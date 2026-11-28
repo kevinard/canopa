@@ -58,6 +58,11 @@ pub struct TooltipTree {
     pub bar_edge: Edge,
 }
 
+/// Tooltips use the body scale a step up, like the labels of hover cards.
+fn tooltip_text_size() -> f32 {
+    crate::theme::body_size() + 1.0
+}
+
 /// Measure the same font, spans, and wrapping policy used by `view_tooltip`.
 pub fn popup_size(tree: &TooltipTree) -> (u32, u32) {
     let ui = crate::theme::ui(canopa_theme::UiKind::Tooltip);
@@ -79,7 +84,7 @@ pub fn popup_size(tree: &TooltipTree) -> (u32, u32) {
         iced::advanced::graphics::text::Paragraph::with_spans(text::Text {
             content: spans.as_slice(),
             bounds: iced::Size::new(width, f32::INFINITY),
-            size: iced::Pixels(crate::theme::title_size()),
+            size: iced::Pixels(tooltip_text_size()),
             line_height: text::LineHeight::default(),
             font: crate::theme::font(),
             align_x: text::Alignment::Default,
@@ -118,21 +123,31 @@ pub fn view_tooltip<'a>(tree: &'a TooltipTree) -> iced::Element<'a, crate::app::
         };
         let frame = container(card.view())
             .padding(super::hover_card::HoverCard::padding() + border)
-            .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui));
-        return container(frame)
+            .style(move |_| {
+                crate::theme::glass(
+                    canopa_ui::frame(&crate::theme::appearance(), ui),
+                    crate::theme::Glass::Popover,
+                )
+            });
+        return container(crate::theme::glass_region(frame, ui.radius))
             .padding(canopa_ui::padding(ui.margin))
             .into();
     }
     let text = rich_text(spans(tree))
-        .size(crate::theme::title_size())
+        .size(tooltip_text_size())
         .font(crate::theme::font())
         .wrapping(text::Wrapping::WordOrGlyph);
     let frame = container(text)
         .padding(canopa_ui::content_padding(ui))
         .max_width((MAX_WIDTH as f32 - ui.margin.horizontal()).max(1.0))
         .height(iced::Length::Shrink)
-        .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui));
-    container(frame)
+        .style(move |_| {
+            crate::theme::glass(
+                canopa_ui::frame(&crate::theme::appearance(), ui),
+                crate::theme::Glass::Popover,
+            )
+        });
+    container(crate::theme::glass_region(frame, ui.radius))
         .padding(canopa_ui::padding(ui.margin))
         .into()
 }

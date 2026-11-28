@@ -14,7 +14,9 @@ use iced::{Element, Event, Length, Rectangle, Renderer, Size, Theme, Vector, mou
 
 use crate::app::{Message, messages::PanelEvent};
 
-const TRAVEL: f32 = 8.0;
+const TRAVEL: f32 = 16.0;
+/// The entry's opacity from which the compositor blurs behind the panel.
+const GLASS_OPACITY: f32 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
@@ -24,6 +26,9 @@ pub struct Animation {
     pub closing: bool,
     pub direction: Vector,
     pub scale: f32,
+    /// Where along the bar the panel's control sits (y for a side bar, x for
+    /// a top or bottom one), in the panel's coordinates: it grows from there.
+    pub anchor: Option<f32>,
 }
 
 impl Animation {
@@ -37,7 +42,37 @@ impl Animation {
             // retreats gently and is nearly transparent before removal.
             self.from * (1.0 - t * t * (3.0 - 2.0 * t))
         } else {
-            1.0 - (1.0 - t).powi(3)
+            // Decelerate evenly: the slide out of the bar reads across the
+            // whole entry and eases into place without a late jump.
+            1.0 - (1.0 - t).powi(2)
+        }
+    }
+
+    /// Elapsed share of the duration, without easing.
+    pub fn fraction(self, now: Instant) -> f32 {
+        (now.saturating_duration_since(self.started).as_secs_f32()
+            / self.duration.as_secs_f32().max(f32::EPSILON))
+        .clamp(0.0, 1.0)
+    }
+
+    /// Opacity of the panel: an entry fades in from faint over its first half,
+    /// so it visibly appears rather than pops; an exit fades with its progress.
+    pub fn opacity(self, now: Instant) -> f32 {
+        if self.closing {
+            self.progress(now)
+        } else {
+            let t = (self.fraction(now) / 0.5).clamp(0.0, 1.0);
+            0.15 + 0.85 * (1.0 - (1.0 - t).powi(2))
+        }
+    }
+
+    /// The panel grows from 95% out of the control that opened it, and shrinks
+    /// a little back toward it as it leaves.
+    pub fn zoom(self, now: Instant) -> f32 {
+        if self.closing {
+            0.97 + 0.03 * self.progress(now)
+        } else {
+            0.95 + 0.05 * self.progress(now)
         }
     }
 
@@ -48,6 +83,9 @@ impl Animation {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Presentation {
+    /// Content is still on its way (a provider's first document): nothing is
+    /// drawn and the entry has not begun.
+    Waiting,
     Preparing,
     Animated(Animation),
     #[default]
@@ -78,9 +116,75 @@ struct State {
     notified: bool,
     now: Option<Instant>,
     image: RefCell<Option<iced::widget::image::Handle>>,
+    /// The compositor blur behind the panel was dropped for its exit.
+    glass_dropped: bool,
+    /// The content's own glass shape, as it last reported it.
+    glass: Option<Option<canopa_ui::glass::Shape>>,
+    /// The shape last sent to the compositor, transformed like the frame.
+    published: Option<Option<canopa_ui::glass::Shape>>,
+    /// A pointer press began inside this panel during its entry.
+    pressed_inside: bool,
+    /// When the first frame of the transition was drawn: its clock starts
+    /// there, so a panel whose first frame is slow to build (a calendar, Quick
+    /// settings) still plays its whole transition instead of joining halfway.
+    first_frame: Option<Instant>,
 }
 
+/// Where a panel grows from: the edge it comes from, at its control's place
+/// along the bar when known.
+fn growth_origin(animation: Animation, bounds: Rectangle) -> iced::Point {
+    let origin = iced::Point::new(
+        match animation.direction.x {
+            x if x < 0.0 => bounds.x,
+            x if x > 0.0 => bounds.x + bounds.width,
+            _ => bounds.center_x(),
+        },
+        match animation.direction.y {
+            y if y < 0.0 => bounds.y,
+            y if y > 0.0 => bounds.y + bounds.height,
+            _ => bounds.center_y(),
+        },
+    );
+    match animation.anchor {
+        Some(along) if animation.direction.y == 0.0 => {
+            iced::Point::new(origin.x, along.clamp(bounds.y, bounds.y + bounds.height))
+        }
+        Some(along) => iced::Point::new(along.clamp(bounds.x, bounds.x + bounds.width), origin.y),
+        None => origin,
+    }
+}
+
+/// How the frame is drawn now: `None` while nothing is visible, otherwise the
+/// origin, zoom and offset applied to it (identity once it has settled).
+type Frame = Option<(iced::Point, f32, Vector)>;
+
 impl Transition<'_> {
+    fn frame(&self, state: &State, bounds: Rectangle) -> Frame {
+        match self.presentation {
+            Presentation::Waiting | Presentation::Preparing => None,
+            Presentation::Still => Some((iced::Point::ORIGIN, 1.0, Vector::ZERO)),
+            Presentation::Animated(animation) => {
+                let now = state.now.unwrap_or(animation.started);
+                if animation.closing {
+                    None
+                } else if state.notified || animation.finished(now) {
+                    Some((iced::Point::ORIGIN, 1.0, Vector::ZERO))
+                } else if animation.opacity(now) < GLASS_OPACITY {
+                    // The compositor blurs at full strength at once: the glass
+                    // joins once the panel's content is legible, so the entry
+                    // never shows an empty slab of blur.
+                    None
+                } else {
+                    Some((
+                        growth_origin(animation, bounds),
+                        animation.zoom(now),
+                        self.offset(state, bounds),
+                    ))
+                }
+            }
+        }
+    }
+
     fn closing(&self) -> bool {
         matches!(
             self.presentation,
@@ -98,6 +202,38 @@ impl Transition<'_> {
         animation.direction
             * (TRAVEL * (1.0 - animation.progress(state.now.unwrap_or(animation.started))))
     }
+}
+
+/// A glass shape as the frame is drawn: the compositor blurs exactly the
+/// panel it can see, at every step of its entry.
+fn place(frame: Frame, shape: Option<canopa_ui::glass::Shape>) -> Option<canopa_ui::glass::Shape> {
+    let ((origin, zoom, offset), shape) = (frame?, shape?);
+    let b = shape.bounds;
+    Some(canopa_ui::glass::Shape {
+        bounds: Rectangle {
+            x: origin.x + (b.x - origin.x) * zoom + offset.x,
+            y: origin.y + (b.y - origin.y) * zoom + offset.y,
+            width: b.width * zoom,
+            height: b.height * zoom,
+        },
+        radius: shape.radius.map(|r| r * zoom),
+    })
+}
+
+/// The capture holds premultiplied colour; images take straight alpha. Without
+/// this, everything translucent (the glass, its rim) draws darker while the
+/// panel moves and brightens when the live panel replaces it.
+fn unpremultiply(mut rgba: Vec<u8>) -> Vec<u8> {
+    for pixel in rgba.chunks_exact_mut(4) {
+        let alpha = u16::from(pixel[3]);
+        if alpha == 0 || alpha == 255 {
+            continue;
+        }
+        for channel in &mut pixel[..3] {
+            *channel = ((u16::from(*channel) * 255 + alpha / 2) / alpha).min(255) as u8;
+        }
+    }
+    rgba
 }
 
 fn capture_size(bounds: Rectangle, scale: f32) -> Option<Size<u32>> {
@@ -158,8 +294,12 @@ impl Widget<Message, Theme, Renderer> for Transition<'_> {
     fn diff(&self, tree: &mut Tree) {
         let state = tree.state.downcast_mut::<State>();
         if state.presentation != self.presentation {
+            // The glass shape outlives the presentation that reported it.
+            let (glass, published) = (state.glass.take(), state.published.take());
             *state = State {
                 presentation: self.presentation,
+                glass,
+                published,
                 ..State::default()
             };
         }
@@ -207,6 +347,13 @@ impl Widget<Message, Theme, Renderer> for Transition<'_> {
     ) {
         let state = tree.state.downcast_mut::<State>();
         if let Event::Window(iced::window::Event::RedrawRequested(now)) = event {
+            let now = &match self.presentation {
+                Presentation::Animated(animation) => {
+                    let first = *state.first_frame.get_or_insert(*now);
+                    animation.started + now.saturating_duration_since(first)
+                }
+                _ => *now,
+            };
             state.now = Some(*now);
             match self.presentation {
                 Presentation::Preparing if !state.notified => {
@@ -230,9 +377,23 @@ impl Widget<Message, Theme, Renderer> for Transition<'_> {
             }
         }
         if self.closing() {
+            // The fill fades out; the blur behind it must not outlast it.
+            if !state.glass_dropped {
+                state.glass_dropped = true;
+                shell.publish(Message::Glass {
+                    window: Some(self.window),
+                    shape: None,
+                });
+            }
             return;
         }
         let offset = self.offset(state, layout.bounds());
+        // The compositor blur follows the frame: the content's glass shape is
+        // kept, and what is sent is that shape as drawn now (nothing before
+        // the entry begins, the zoomed and offset shape while it plays).
+        let frame = self.frame(state, layout.bounds());
+        let mut messages = Vec::new();
+        let mut inner = Shell::new(&mut messages);
         self.content.as_widget_mut().update(
             &mut tree.children[0],
             &translated_event(event, offset),
@@ -240,19 +401,57 @@ impl Widget<Message, Theme, Renderer> for Transition<'_> {
             cursor - offset,
             renderer,
             clipboard,
-            shell,
+            &mut inner,
             viewport,
         );
-        // Finish after a pointer gesture, so its press and release both target
-        // the visible control. Scrolling and typing reveal live content at once.
-        if matches!(
+        let reported = std::cell::Cell::new(None);
+        shell.merge(inner, |message| match message {
+            Message::Glass { window, shape } => {
+                reported.set(Some(shape));
+                Message::Glass {
+                    window,
+                    shape: place(frame, shape),
+                }
+            }
+            message => message,
+        });
+        if let Some(shape) = reported.take() {
+            state.glass = Some(shape);
+            state.published = Some(place(frame, shape));
+        } else if matches!(
             event,
-            Event::Mouse(mouse::Event::ButtonReleased(_) | mouse::Event::WheelScrolled { .. })
-                | Event::Keyboard(iced::keyboard::Event::KeyPressed { .. })
-                | Event::Touch(
-                    iced::touch::Event::FingerLifted { .. } | iced::touch::Event::FingerLost { .. }
-                )
-        ) && matches!(self.presentation, Presentation::Animated(_))
+            Event::Window(iced::window::Event::RedrawRequested(_))
+        ) && let Some(shape) = state.glass
+        {
+            let placed = place(frame, shape);
+            if state.published != Some(placed) {
+                state.published = Some(placed);
+                shell.publish(Message::Glass {
+                    window: None,
+                    shape: placed,
+                });
+            }
+        }
+        // Finish after a pointer gesture in the panel, so its press and release
+        // both target the visible control. The release of the click that opened
+        // the panel is not one. Scrolling and typing reveal live content at once.
+        let state = tree.state.downcast_mut::<State>();
+        if let Event::Mouse(mouse::Event::ButtonPressed(_))
+        | Event::Touch(iced::touch::Event::FingerPressed { .. }) = event
+        {
+            state.pressed_inside = cursor.is_over(layout.bounds());
+        }
+        let gesture_ended = match event {
+            Event::Mouse(mouse::Event::ButtonReleased(_))
+            | Event::Touch(
+                iced::touch::Event::FingerLifted { .. } | iced::touch::Event::FingerLost { .. },
+            ) => std::mem::take(&mut state.pressed_inside),
+            Event::Mouse(mouse::Event::WheelScrolled { .. })
+            | Event::Keyboard(iced::keyboard::Event::KeyPressed { .. }) => true,
+            _ => false,
+        };
+        if gesture_ended
+            && matches!(self.presentation, Presentation::Animated(_))
             && !state.notified
         {
             state.notified = true;
@@ -273,7 +472,10 @@ impl Widget<Message, Theme, Renderer> for Transition<'_> {
         viewport: &Rectangle,
     ) {
         let state = tree.state.downcast_ref::<State>();
-        if self.presentation == Presentation::Preparing {
+        if matches!(
+            self.presentation,
+            Presentation::Preparing | Presentation::Waiting
+        ) {
             return;
         }
         let draw_content = |renderer: &mut Renderer| {
@@ -305,6 +507,12 @@ impl Widget<Message, Theme, Renderer> for Transition<'_> {
             return;
         };
         let mut image = state.image.borrow_mut();
+        // An entry shows live content: data that arrives while it plays (a
+        // device name, the launcher's default action) appears at once. An
+        // exit keeps the content it had when it began to leave.
+        if !animation.closing {
+            *image = None;
+        }
         if image.is_none() {
             draw_content(renderer);
             let rgba = renderer::Headless::screenshot(
@@ -318,18 +526,25 @@ impl Widget<Message, Theme, Renderer> for Transition<'_> {
             *image = Some(iced::widget::image::Handle::from_rgba(
                 physical.width,
                 physical.height,
-                rgba,
+                unpremultiply(rgba),
             ));
         }
-        let progress = animation.progress(now);
         let offset = self.offset(state, bounds);
+        // Grow from the edge the panel comes from, at its control.
+        let zoom = animation.zoom(now);
+        let origin = growth_origin(animation, bounds);
+        // Snapped to whole device pixels, so text never shimmers as it settles.
+        let snap = |value: f32| (value * animation.scale).round() / animation.scale;
+        let scaled = Rectangle {
+            x: snap(origin.x + (bounds.x - origin.x) * zoom + offset.x),
+            y: snap(origin.y + (bounds.y - origin.y) * zoom + offset.y),
+            width: snap(bounds.width * zoom),
+            height: snap(bounds.height * zoom),
+        };
         renderer.draw_image(
-            iced::advanced::image::Image::new(image.as_ref().unwrap().clone()).opacity(progress),
-            Rectangle {
-                x: bounds.x + offset.x,
-                y: bounds.y + offset.y,
-                ..bounds
-            },
+            iced::advanced::image::Image::new(image.as_ref().unwrap().clone())
+                .opacity(animation.opacity(now)),
+            scaled,
             *viewport,
         );
     }
@@ -400,6 +615,7 @@ mod tests {
                     closing: false,
                     direction,
                     scale: 1.5,
+                    anchor: None,
                 };
                 let mut view = wrap(
                     iced::widget::container(
@@ -486,6 +702,7 @@ mod tests {
             closing: false,
             direction: Vector::new(-1.0, 0.0),
             scale: 1.0,
+            anchor: None,
         };
         let halfway = start + Duration::from_millis(90);
         let exit = Animation {
@@ -504,6 +721,16 @@ mod tests {
     }
 
     #[test]
+    fn captures_return_to_straight_alpha() {
+        // A 24% white rim over nothing, as captured, and opaque and clear pixels.
+        let captured = vec![61, 61, 61, 61, 10, 20, 30, 255, 0, 0, 0, 0];
+        assert_eq!(
+            super::unpremultiply(captured),
+            vec![255, 255, 255, 61, 10, 20, 30, 255, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
     fn closing_tapers_to_transparent_before_the_window_is_removed() {
         let start = Instant::now();
         for from in [0.25, 0.75, 1.0] {
@@ -514,6 +741,7 @@ mod tests {
                 closing: true,
                 direction: Vector::new(-1.0, 0.0),
                 scale: 1.0,
+                anchor: None,
             };
             let samples: Vec<_> = (0..=10)
                 .map(|frame| exit.progress(start + exit.duration.mul_f32(frame as f32 / 10.0)))

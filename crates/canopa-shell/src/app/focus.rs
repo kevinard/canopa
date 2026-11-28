@@ -23,6 +23,7 @@ impl App {
         let mut tasks = self.close_tooltip_popup_if_open(window);
         let s = self.surface_mut(window);
         s.focused_module = None;
+        s.focus_visible = false;
         s.module_activated = false;
         tasks.push(Task::done(Message::KeyboardInteractivityChange {
             id: window,
@@ -79,6 +80,7 @@ impl App {
         forward: bool,
     ) -> Task<Message> {
         let s = self.surface_mut(window);
+        s.focus_visible = true;
         if s.focused_module.is_none() {
             return Task::done(Message::Surface(
                 super::messages::SurfaceEvent::BarFocusGained(window),
@@ -116,6 +118,7 @@ impl App {
         forward: bool,
     ) -> Task<Message> {
         let s = self.surface_mut(window);
+        s.focus_visible = true;
         if s.focused_module.is_none() {
             return Task::done(Message::Surface(
                 super::messages::SurfaceEvent::BarFocusGained(window),

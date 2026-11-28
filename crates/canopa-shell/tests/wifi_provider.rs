@@ -165,10 +165,10 @@ async fn iwd_provider_initial_content_reports_active_network_without_scanning() 
                 entries: vec![canopa_panel_protocol::v1::ExternalSelectableEntry {
                     id: "iwd:/station/0/Home".into(),
                     label: "Home".into(),
-                    description: Some("known secured 82%".into()),
+                    description: Some("Saved · Secured · Signal 82%".into()),
                     disabled: false,
                     active: true,
-                    status: Some("active".into()),
+                    status: Some("Connected".into()),
                 }],
                 allow_custom: true,
             },
@@ -257,7 +257,7 @@ async fn iwd_provider_scan_collapses_and_orders_wifi_network_rows() {
     );
     let cafe = entries.iter().find(|entry| entry.label == "Cafe").unwrap();
     assert_eq!(cafe.id, "network:cafe");
-    assert_eq!(cafe.description.as_deref(), Some("open 70%"));
+    assert_eq!(cafe.description.as_deref(), Some("Open · Signal 70%"));
 }
 
 #[tokio::test]
@@ -324,7 +324,7 @@ async fn known_wifi_row_activation_streams_connecting_then_active_content() {
     else {
         panic!("expected connecting list");
     };
-    assert_eq!(connecting[0].status.as_deref(), Some("connecting"));
+    assert_eq!(connecting[0].status.as_deref(), Some("Connecting…"));
     assert!(connecting[0].disabled);
     assert!(!documents[0].elements.iter().any(
         |element| matches!(element, ExternalPanelElement::Button { id, .. } if id == "refresh")
@@ -336,7 +336,7 @@ async fn known_wifi_row_activation_streams_connecting_then_active_content() {
     else {
         panic!("expected active list");
     };
-    assert_eq!(active[0].status.as_deref(), Some("active"));
+    assert_eq!(active[0].status.as_deref(), Some("Connected"));
     assert!(active[0].active);
 }
 
@@ -406,6 +406,10 @@ async fn rejected_network_credential_keeps_prompt_and_clears_secret() {
                 error: Some("Credential rejected".into()),
             },
             ExternalPanelElement::Button {
+                id: "cancel".into(),
+                label: "Cancel".into(),
+            },
+            ExternalPanelElement::Button {
                 id: "connect".into(),
                 label: "Connect".into(),
             },
@@ -463,6 +467,10 @@ async fn custom_list_value_starts_trimmed_hidden_network_prompt() {
                 value: String::new(),
                 secret: true,
                 error: None,
+            },
+            ExternalPanelElement::Button {
+                id: "cancel".into(),
+                label: "Cancel".into(),
             },
             ExternalPanelElement::Button {
                 id: "connect".into(),
@@ -791,6 +799,10 @@ async fn unknown_secured_wifi_row_activation_shows_secret_credential_prompt() {
                 error: None,
             },
             ExternalPanelElement::Button {
+                id: "cancel".into(),
+                label: "Cancel".into(),
+            },
+            ExternalPanelElement::Button {
                 id: "connect".into(),
                 label: "Connect".into(),
             },
@@ -871,7 +883,7 @@ async fn submitted_network_credential_connects_without_rendering_the_secret() {
     else {
         panic!("expected active list");
     };
-    assert_eq!(active[0].status.as_deref(), Some("active"));
+    assert_eq!(active[0].status.as_deref(), Some("Connected"));
     assert!(active[0].active);
 }
 

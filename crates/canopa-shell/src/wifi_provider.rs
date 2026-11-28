@@ -38,6 +38,8 @@ pub struct WifiPanelProvider<B> {
     progress: Option<tokio::sync::mpsc::UnboundedSender<ExternalPanelDocument>>,
     /// Whether the radio is on; `None` when the backend cannot tell.
     radio: Option<bool>,
+    /// The name typed into the "Join other network" prompt, while it is open.
+    hidden_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +70,7 @@ where
             credential_prompt: None,
             progress: None,
             radio: None,
+            hidden_prompt: None,
         }
     }
 
@@ -178,6 +181,35 @@ where
                     .map(|prompt| prompt.value.clone())
                     .unwrap_or_default();
                 self.submit_credential(value).await
+            }
+            // The rich panel joins a hidden network through a prompt of its own.
+            ProviderEvent::ButtonActivated { element_id } if element_id == "join-hidden" => {
+                self.credential_prompt = None;
+                self.hidden_prompt = Some(String::new());
+                Ok(vec![self.render_hidden_prompt()])
+            }
+            ProviderEvent::TextInputChanged { element_id, value }
+                if element_id == "hidden-name" =>
+            {
+                if let Some(name) = &mut self.hidden_prompt {
+                    *name = value;
+                }
+                Ok(Vec::new())
+            }
+            ProviderEvent::TextInputSubmitted { element_id, value }
+                if element_id == "hidden-name" =>
+            {
+                self.hidden_prompt = None;
+                self.submit_custom_network_value(value).await
+            }
+            ProviderEvent::ButtonActivated { element_id } if element_id == "join" => {
+                let value = self.hidden_prompt.take().unwrap_or_default();
+                self.submit_custom_network_value(value).await
+            }
+            ProviderEvent::ButtonActivated { element_id } if element_id == "cancel" => {
+                self.hidden_prompt = None;
+                self.credential_prompt = None;
+                Ok(vec![self.render()])
             }
             ProviderEvent::ButtonActivated { element_id } if element_id == "refresh" => {
                 self.refresh().await.map(|document| vec![document])
@@ -562,8 +594,40 @@ where
                     error: prompt.error.clone(),
                 },
                 ExternalPanelElement::Button {
+                    id: "cancel".into(),
+                    label: fl!("shell-wifi-cancel"),
+                },
+                ExternalPanelElement::Button {
                     id: "connect".into(),
                     label: fl!("shell-wifi-connect"),
+                },
+            ],
+        }
+    }
+
+    /// The prompt for a hidden network's name.
+    fn render_hidden_prompt(&self) -> ExternalPanelDocument {
+        ExternalPanelDocument {
+            elements: vec![
+                ExternalPanelElement::Status {
+                    title: fl!("shell-wifi-join-other"),
+                    message: fl!("shell-wifi-join-other-prompt"),
+                    severity: ExternalPanelSeverity::Info,
+                },
+                ExternalPanelElement::TextInput {
+                    id: "hidden-name".into(),
+                    label: fl!("shell-wifi-network-name"),
+                    value: self.hidden_prompt.clone().unwrap_or_default(),
+                    secret: false,
+                    error: None,
+                },
+                ExternalPanelElement::Button {
+                    id: "cancel".into(),
+                    label: fl!("shell-wifi-cancel"),
+                },
+                ExternalPanelElement::Button {
+                    id: "join".into(),
+                    label: fl!("shell-wifi-join"),
                 },
             ],
         }
@@ -586,20 +650,17 @@ where
             description: Some(network_description(network)),
             disabled: self.connecting_network_id.is_some(),
             active: network.active,
-            status: Some(if connecting {
-                "connecting".into()
+            // A badge only where the row's state matters: the description
+            // already says whether it is saved, secured and how strong.
+            status: if connecting {
+                Some(fl!("shell-wifi-status-connecting"))
             } else if failed {
-                "failed".into()
+                Some(fl!("shell-wifi-status-failed"))
             } else if network.active {
-                "active".into()
-            } else if network.known {
-                "known".into()
+                Some(fl!("shell-wifi-status-connected"))
             } else {
-                match network.security {
-                    WifiSecurity::Open => "open".into(),
-                    WifiSecurity::Personal | WifiSecurity::Enterprise => "secured".into(),
-                }
-            }),
+                None
+            },
         }
     }
 }
@@ -668,19 +729,295 @@ fn user_message_for_error(category: WifiBackendErrorCategory) -> String {
 }
 
 /// "known secured 70%": whether the network is saved, its security and signal.
+/// "Saved · Secured · Signal 82%": what a network row says under its name.
 fn network_description(network: &WifiNetwork) -> String {
     let security = match network.security {
-        WifiSecurity::Open => "open",
-        WifiSecurity::Personal => "secured",
-        WifiSecurity::Enterprise => "enterprise",
+        WifiSecurity::Open => fl!("shell-wifi-security-open"),
+        WifiSecurity::Personal => fl!("shell-wifi-security-secured"),
+        WifiSecurity::Enterprise => fl!("shell-wifi-security-enterprise"),
     };
-    fl!(
-        "shell-wifi-network-description",
-        known = if network.known { "yes" } else { "no" },
-        security = security,
+    let signal = fl!(
+        "shell-wifi-signal",
         signal = canopa_i18n::format::percent(f64::from(network.signal_strength))
-    )
+    );
+    let mut parts = Vec::new();
+    if network.known {
+        parts.push(fl!("shell-wifi-saved"));
+    }
+    parts.push(security);
+    parts.push(signal);
+    parts.join(" · ")
 }
 
 #[cfg(test)]
 mod backend_tests;
+
+/// The panel in Canopa's rich format, for hosts that speak it, built from a
+/// form `document` of this provider: `None` keeps the form, for prompts that
+/// need a text field and for a backend that cannot be controlled.
+///
+/// The header switches the radio and refreshes; the network in use leads with
+/// Disconnect and Forget, and the others follow under **Networks**, each with
+/// Connect. Joining a hidden network has its own prompt.
+pub fn rich_view(document: &ExternalPanelDocument) -> Option<canopa_panel_protocol::PanelContent> {
+    use canopa_panel_protocol::{PanelAction, PanelContent, PanelItem, PanelSection};
+
+    let elements = &document.elements;
+    if elements
+        .iter()
+        .any(|element| matches!(element, ExternalPanelElement::TextInput { .. }))
+    {
+        return None;
+    }
+    let button = |id: &str| {
+        elements.iter().find_map(|element| match element {
+            ExternalPanelElement::Button { id: found, label } if found == id => Some(label.clone()),
+            _ => None,
+        })
+    };
+    let radio = button("radio");
+    // No radio switch and no list: the backend cannot be controlled.
+    let list = elements.iter().find_map(|element| match element {
+        ExternalPanelElement::SelectableList { id, entries, .. } if id == "networks" => {
+            Some(entries)
+        }
+        _ => None,
+    });
+    if radio.is_none() && list.is_none() {
+        return None;
+    }
+    let radio_on = radio
+        .as_deref()
+        .is_none_or(|label| label == fl!("shell-wifi-turn-off"));
+
+    let item = |id: String, title: String| PanelItem {
+        id,
+        title,
+        attribution: None,
+        body: None,
+        styled_body: None,
+        rich_body: None,
+        metadata: Vec::new(),
+        actions: Vec::new(),
+        slider: None,
+    };
+    let section = |id: &str, title: String, items: Vec<PanelItem>| PanelSection {
+        id: id.into(),
+        title,
+        icon: None,
+        items,
+        controls: Vec::new(),
+    };
+
+    let mut content = PanelContent::new(fl!("shell-wifi-title"));
+    content.error = elements.iter().find_map(|element| match element {
+        ExternalPanelElement::Status {
+            message,
+            severity: ExternalPanelSeverity::Error,
+            ..
+        } => Some(message.clone()),
+        _ => None,
+    });
+    if radio.is_some() {
+        content.actions.push(
+            PanelAction::new("radio", fl!("shell-wifi-title"))
+                .pressed(radio_on)
+                .secondary(),
+        );
+    }
+    if let Some(label) = button("refresh") {
+        content.actions.push(
+            PanelAction::new("refresh", label)
+                .secondary()
+                .symbol("view-refresh-symbolic"),
+        );
+    }
+    if !radio_on {
+        let mut off = item("off".into(), fl!("shell-wifi-off"));
+        off.body = Some(fl!("shell-wifi-off-hint"));
+        content
+            .sections
+            .push(section("status", String::new(), vec![off]));
+        return Some(content);
+    }
+    content.actions.push(PanelAction::new(
+        "join-hidden",
+        fl!("shell-wifi-join-other-action"),
+    ));
+
+    let entries = list.map(Vec::as_slice).unwrap_or_default();
+    let failed = fl!("shell-wifi-status-failed");
+    // Forget applies to the network that just failed, else the one in use.
+    let forget_target = entries
+        .iter()
+        .find(|entry| entry.status.as_deref() == Some(failed.as_str()))
+        .or_else(|| entries.iter().find(|entry| entry.active))
+        .map(|entry| entry.id.clone());
+    let forget = button("forget");
+    let disconnect = button("disconnect");
+    let row = |entry: &ExternalSelectableEntry| {
+        let mut row = item(entry.id.clone(), entry.label.clone());
+        row.body = Some(
+            entry
+                .status
+                .iter()
+                .chain(entry.description.iter())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" · "),
+        );
+        if entry.active {
+            if let Some(label) = &disconnect {
+                row.actions
+                    .push(PanelAction::new("disconnect", label.clone()));
+            }
+        } else if !entry.disabled {
+            row.actions
+                .push(PanelAction::new("connect", fl!("shell-wifi-connect")));
+        }
+        if forget.is_some() && forget_target.as_deref() == Some(entry.id.as_str()) {
+            row.actions
+                .push(PanelAction::new("forget", fl!("shell-wifi-forget-action")).destructive());
+        }
+        row
+    };
+    let current: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.active || entry.status.is_some())
+        .map(row)
+        .collect();
+    let others: Vec<_> = entries
+        .iter()
+        .filter(|entry| !entry.active && entry.status.is_none())
+        .map(row)
+        .collect();
+    if !current.is_empty() {
+        content
+            .sections
+            .push(section("current", String::new(), current));
+    }
+    if others.is_empty() && content.sections.is_empty() {
+        // Nothing found yet: say what is happening.
+        let message = elements.iter().find_map(|element| match element {
+            ExternalPanelElement::Status {
+                message,
+                severity: ExternalPanelSeverity::Info,
+                ..
+            } => Some(message.clone()),
+            _ => None,
+        });
+        let status = item(
+            "status".into(),
+            message.unwrap_or_else(|| fl!("shell-wifi-choose")),
+        );
+        content
+            .sections
+            .push(section("status", String::new(), vec![status]));
+    } else if !others.is_empty() {
+        content
+            .sections
+            .push(section("networks", fl!("shell-wifi-networks"), others));
+    }
+    Some(content)
+}
+
+#[cfg(test)]
+mod rich_tests {
+    use super::*;
+
+    fn entry(id: &str, active: bool, status: Option<&str>) -> ExternalSelectableEntry {
+        ExternalSelectableEntry {
+            id: id.into(),
+            label: id.into(),
+            description: Some("Secured · Signal 80%".into()),
+            disabled: false,
+            active,
+            status: status.map(Into::into),
+        }
+    }
+
+    fn list(
+        entries: Vec<ExternalSelectableEntry>,
+        buttons: &[(&str, String)],
+    ) -> ExternalPanelDocument {
+        let mut elements = vec![ExternalPanelElement::Status {
+            title: fl!("shell-wifi-title"),
+            message: "Connected to Home".into(),
+            severity: ExternalPanelSeverity::Info,
+        }];
+        elements.extend(
+            buttons
+                .iter()
+                .map(|(id, label)| ExternalPanelElement::Button {
+                    id: (*id).into(),
+                    label: label.clone(),
+                }),
+        );
+        elements.push(ExternalPanelElement::SelectableList {
+            id: "networks".into(),
+            entries,
+            allow_custom: true,
+        });
+        ExternalPanelDocument { elements }
+    }
+
+    #[test]
+    fn the_network_in_use_leads_and_the_others_follow_under_networks() {
+        let document = list(
+            vec![
+                entry("Home", true, Some(&fl!("shell-wifi-status-connected"))),
+                entry("Cafe", false, None),
+            ],
+            &[
+                ("refresh", fl!("shell-wifi-refresh")),
+                ("disconnect", fl!("shell-wifi-disconnect")),
+                ("forget", fl!("shell-wifi-forget", network = "Home")),
+                ("radio", fl!("shell-wifi-turn-off")),
+            ],
+        );
+        let content = rich_view(&document).expect("a list is rich");
+        let keys: Vec<_> = content.actions.iter().map(|a| a.key.as_str()).collect();
+        assert_eq!(keys, ["radio", "refresh", "join-hidden"]);
+        assert_eq!(content.actions[0].pressed, Some(true));
+        assert_eq!(content.sections[0].items[0].title, "Home");
+        let home: Vec<_> = content.sections[0].items[0]
+            .actions
+            .iter()
+            .map(|a| a.key.as_str())
+            .collect();
+        assert_eq!(home, ["disconnect", "forget"]);
+        assert_eq!(content.sections[1].title, fl!("shell-wifi-networks"));
+        assert_eq!(content.sections[1].items[0].actions[0].key, "connect");
+    }
+
+    #[test]
+    fn prompts_keep_their_form_and_a_radio_that_is_off_says_so() {
+        let mut prompt = list(Vec::new(), &[]);
+        prompt.elements.push(ExternalPanelElement::TextInput {
+            id: "credential".into(),
+            label: "Password".into(),
+            value: String::new(),
+            secret: true,
+            error: None,
+        });
+        assert!(rich_view(&prompt).is_none());
+        assert!(rich_view(&no_control_document()).is_none());
+
+        let off = ExternalPanelDocument {
+            elements: vec![
+                ExternalPanelElement::Status {
+                    title: fl!("shell-wifi-title"),
+                    message: fl!("shell-wifi-off"),
+                    severity: ExternalPanelSeverity::Info,
+                },
+                ExternalPanelElement::Button {
+                    id: "radio".into(),
+                    label: fl!("shell-wifi-turn-on"),
+                },
+            ],
+        };
+        let content = rich_view(&off).expect("a radio is rich");
+        assert_eq!(content.actions[0].pressed, Some(false));
+        assert_eq!(content.sections[0].items[0].title, fl!("shell-wifi-off"));
+    }
+}

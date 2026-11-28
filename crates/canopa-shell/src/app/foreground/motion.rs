@@ -13,6 +13,7 @@ pub(super) struct PanelMotion {
     config: PanelAnimationConfig,
     presentation: Presentation,
     scale: Option<f32>,
+    anchor: Option<f32>,
 }
 
 pub(super) struct RetiringPanel {
@@ -27,6 +28,7 @@ impl Foreground {
         window: iced::window::Id,
         edge: &Edge,
         config: PanelAnimationConfig,
+        anchor: Option<f32>,
     ) {
         if self.active_panel_window() != Some(window) {
             return;
@@ -46,6 +48,7 @@ impl Foreground {
             },
             config,
             scale: None,
+            anchor,
         });
     }
 
@@ -73,6 +76,7 @@ impl Foreground {
                 closing: false,
                 direction: motion.direction,
                 scale,
+                anchor: motion.anchor,
             })
         } else {
             Presentation::Still
@@ -123,7 +127,7 @@ impl Foreground {
         }
         let now = Instant::now();
         let from = match motion.presentation {
-            Presentation::Preparing => return None,
+            Presentation::Preparing | Presentation::Waiting => return None,
             Presentation::Animated(animation) => animation.progress(now),
             Presentation::Still => 1.0,
         };
@@ -141,6 +145,7 @@ impl Foreground {
                 closing: true,
                 direction: motion.direction,
                 scale,
+                anchor: motion.anchor,
             },
         });
         effects.push(ForegroundEffect::RetirePanelWindow { window, duration });
@@ -181,7 +186,7 @@ mod tests {
         });
         let window = iced::window::Id::unique();
         foreground.handle(ForegroundIntent::PanelWindowOpened { window });
-        foreground.configure_panel_motion(window, &edge, config);
+        foreground.configure_panel_motion(window, &edge, config, None);
         foreground.panel_motion_ready(window, 1.5);
         foreground.finish_panel_motion(window, false);
         window
@@ -267,7 +272,12 @@ mod tests {
             Edge::Left,
             PanelAnimationConfig::default(),
         );
-        foreground.configure_panel_motion(window, &Edge::Left, PanelAnimationConfig::default());
+        foreground.configure_panel_motion(
+            window,
+            &Edge::Left,
+            PanelAnimationConfig::default(),
+            None,
+        );
         assert_eq!(
             foreground.panel_presentation(window),
             Presentation::Preparing

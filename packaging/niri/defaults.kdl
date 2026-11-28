@@ -88,6 +88,8 @@ layer-rule {
 overview {
     emit-typed-text
     backdrop-color "#10191d"
+    // Each workspace is named above it.
+    workspace-labels
 }
 animations {
     horizontal-view-movement { duration-ms 300; curve "ease-out-cubic"; }

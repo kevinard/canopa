@@ -114,7 +114,7 @@ Per-App Identity sound and lock-screen visibility, beside the app's delivery Not
 A read-only, policy-filtered list of display lines for the session locker: critical (and break-through) notifications that are live or unread, without content unless the app allows it. It carries no IDs or actions.
 
 **Banner-Hide Timer**:
-A display timeout that hides a banner while its sender lifecycle stays active, so callbacks and Center actions remain live (portal notifications).
+A display timeout that hides a banner while its sender lifecycle stays active, so callbacks and Center actions remain live (portal notifications, and freedesktop notifications with their own actions and the server's default timeout; [ADR 0056](adr/0056-live-actions-after-the-banner.md)).
 _Avoid_: Notification Timeout when the notification does not expire
 
 **Reply Composer**:

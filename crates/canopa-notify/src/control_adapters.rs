@@ -563,15 +563,23 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                     )
                                 })
                                 .into_iter()
-                                .chain(item.actions.into_iter().map(|action| {
-                                    panel_center_action(
-                                        item.target.clone(),
-                                        NotificationCenterAction::InvokeAction {
-                                            action_key: action.key,
-                                        },
-                                        action.label,
-                                    )
-                                }))
+                                .chain(item.actions.into_iter().enumerate().map(
+                                    |(position, action)| {
+                                        let action = panel_center_action(
+                                            item.target.clone(),
+                                            NotificationCenterAction::InvokeAction {
+                                                action_key: action.key,
+                                            },
+                                            action.label,
+                                        );
+                                        // The application's first action leads its card.
+                                        if position == 0 {
+                                            action.primary()
+                                        } else {
+                                            action
+                                        }
+                                    },
+                                ))
                                 .chain(
                                     (item.status == canopa_notify::NotificationStatus::Active
                                         && item.has_default_action)
@@ -742,6 +750,9 @@ fn panel_center_action(
             NotificationCenterAction::Dismiss | NotificationCenterAction::Remove
         ),
         pressed: None,
+        secondary: false,
+        primary: false,
+        symbol: None,
         key: panel_center_action_key(&action).to_string(),
         label,
         value: Some(

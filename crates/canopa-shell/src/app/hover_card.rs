@@ -246,7 +246,7 @@ impl App {
         }
     }
 
-    fn close_hover_cards(&mut self) -> Task<Message> {
+    pub(super) fn close_hover_cards(&mut self) -> Task<Message> {
         self.hover_cards.close_at = None;
         self.hover_cards.pointer_in = None;
         let cards: Vec<_> = self

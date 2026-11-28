@@ -311,12 +311,12 @@ async fn bottom_start_banners_take_input_only_in_their_corner() {
     let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
         panic!("{actions:?}");
     };
-    let height = queued_card_height(&renderer, 360.0);
+    let height = queued_card_height(&renderer, 388.0);
     assert_eq!(
         region_requests(region),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![0, 600 - height, 360, height])
+            (1, vec![0, 600 - height, 388, height])
         ]
     );
 }
@@ -336,7 +336,7 @@ async fn queued_input_regions_use_the_latest_viewport_and_remain_empty_after_cle
         region_requests(old),
         vec![
             reset.clone(),
-            (1, vec![616, 0, 360, queued_card_height(&renderer, 360.0)])
+            (1, vec![588, 0, 388, queued_card_height(&renderer, 388.0)])
         ]
     );
     let resized = frame_actions(&mut state, &renderer, Size::new(276.0, 216.0), &mut tree).await;
@@ -381,7 +381,7 @@ async fn compositor_viewport_keeps_cards_width_capped_and_top_right() {
         42, "Fits",
     )]));
     for (viewport, expected_x, expected_width) in [
-        (Size::new(976.0, 216.0), 616.0, 360.0),
+        (Size::new(976.0, 216.0), 588.0, 388.0),
         (Size::new(276.0, 416.0), 0.0, 276.0),
     ] {
         let frames = frame_messages(&state, &renderer, viewport);
@@ -1556,7 +1556,7 @@ async fn three_card_stack_with_overflow_clamps_input_and_clears_to_click_through
         region_requests(region),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![616, 0, 360, 216])
+            (1, vec![588, 0, 388, 216])
         ]
     );
     assert!(
@@ -1687,7 +1687,7 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
         region_requests(region),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![616, 0, 360, queued_card_height(&renderer, 360.0)])
+            (1, vec![588, 0, 388, queued_card_height(&renderer, 388.0)])
         ]
     );
     assert!(

@@ -54,6 +54,7 @@ mod view;
 mod visibility;
 mod wallpaper;
 mod widget_ops;
+mod workspace_menu;
 
 use iced::Task;
 
@@ -94,6 +95,8 @@ pub(crate) struct App {
     osd: osd::OsdRuntime,
     quick_toggles: quick_toggles::QuickToggles,
     taskbar: taskbar::TaskbarRuntime,
+    /// The workspace menu on screen, if any.
+    workspace_menu: Option<workspace_menu::OpenWorkspaceMenu>,
     hover_cards: hover_card::HoverCardRuntime,
     #[cfg(test)]
     external_panel_responses_for_test: std::collections::HashMap<
@@ -180,6 +183,8 @@ pub enum Message {
     QuickToggles(quick_toggles::Event),
     /// A taskbar application was clicked.
     Taskbar(crate::modules::taskbar::TaskbarEvent),
+    /// A workspace pill's menu and rename prompt.
+    Workspaces(crate::modules::workspaces::WorkspaceEvent),
     /// A window or column was chosen on the minimap.
     Minimap(crate::modules::minimap::MinimapEvent),
     /// A delayed save of the window session, by generation.
@@ -196,6 +201,13 @@ pub enum Message {
     BarAutoHideFrame,
     /// A window chosen or closed on a taskbar or workspace hover card.
     HoverCard(crate::surface::hover_card::Event),
+    /// The visible shape of a translucent surface changed; the compositor
+    /// blurs the background behind it. Views publish it without a window,
+    /// and the window's root view stamps its id.
+    Glass {
+        window: Option<iced::window::Id>,
+        shape: Option<canopa_ui::glass::Shape>,
+    },
 }
 
 impl Message {
@@ -234,6 +246,7 @@ impl Message {
             Message::Accessibility(_) => "Accessibility",
             Message::BarAutoHideFrame => "BarAutoHideFrame",
             Message::HoverCard(_) => "HoverCard",
+            Message::Glass { .. } => "Glass",
             _ => "LayerShell",
         }
     }
@@ -391,6 +404,7 @@ impl App {
             session_restore: Default::default(),
             quick_toggles: Default::default(),
             taskbar: Default::default(),
+            workspace_menu: None,
             hover_cards: Default::default(),
             notices: Default::default(),
             session: Default::default(),
@@ -564,8 +578,10 @@ impl App {
             ])),
             Message::QuickToggles(event) => self.handle_quick_toggle_event(event),
             Message::Taskbar(event) => self.handle_taskbar_event(event),
+            Message::Workspaces(event) => self.handle_workspace_event(event),
             Message::BarAutoHideFrame => Task::none(),
             Message::HoverCard(event) => self.handle_hover_card_event(event),
+            Message::Glass { window, shape } => glass_region(window, shape),
             Message::WindowSessionSave(generation) => {
                 self.save_window_session(generation);
                 Task::none()
@@ -2045,4 +2061,40 @@ mod tests {
             "right bar not spawned for DP-1"
         );
     }
+}
+
+/// Ask the compositor to blur behind a translucent surface's visible shape,
+/// or to stop with `None`.
+pub(crate) fn glass_region(
+    window: Option<iced::window::Id>,
+    shape: Option<canopa_ui::glass::Shape>,
+) -> Task<Message> {
+    use iced_layershell::actions::{LayerShellCustomAction, LayerShellCustomActionWithId};
+    let Some(window) = window else {
+        return Task::none();
+    };
+    if crate::theme::appearance().high_contrast() {
+        return Task::none();
+    }
+    Task::done(Message::LayerShell(LayerShellCustomActionWithId(
+        Some(window),
+        LayerShellCustomAction::SetBlurRegion(shape.map(canopa_ui::glass::rectangles)),
+    )))
+}
+
+/// Give glass messages from `view` the id of the window they belong to.
+pub(crate) fn stamp_glass(
+    window: iced::window::Id,
+    view: iced::Element<'_, Message>,
+) -> iced::Element<'_, Message> {
+    view.map(move |message| match message {
+        Message::Glass {
+            window: None,
+            shape,
+        } => Message::Glass {
+            window: Some(window),
+            shape,
+        },
+        message => message,
+    })
 }

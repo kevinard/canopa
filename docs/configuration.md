@@ -244,7 +244,7 @@ Bar names must be unique. Several bars can share an output.
 | `width`, `height`, `max-width`, `max-height` | logical pixels | automatic |
 | `launcher-width` | width of launcher menus opened from this bar | panel width |
 | `start`, `center`, `end` | module names | none |
-| `animation { open-ms; close-ms }` | transition durations; `0` disables | 180, 160 |
+| `animation { open-ms; close-ms }` | transition durations; `0` disables | 240, 150 |
 | `ui { … }` | panel frame style | appearance `panel` |
 
 ### Actions

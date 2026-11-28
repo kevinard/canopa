@@ -72,8 +72,8 @@ panel you want to keep from
 
 | Module | What it shows and does |
 | --- | --- |
-| `workspaces` | One pill per Niri workspace: accent for the focused one, filled when occupied, outlined when empty. Click or scroll to switch. Labels and icons per workspace with `workspace N { label; icon; }`. Hover a pill for its card (see [Workspace cards](#workspace-cards)). |
-| `taskbar` | Pinned applications, then the other running ones in screen order (see [Taskbar](#taskbar)). |
+| `workspaces` | One pill per Niri workspace: accent for the focused one, filled when occupied, outlined when empty. Click or scroll to switch; right-click for **Rename…** (a prompt; **Use the numbered name** clears it) and **Move up** / **Move down**. A named workspace stays, even when empty, until Niri restarts; a name another workspace already has is ignored. Name workspaces in Niri's configuration to keep them across restarts. Labels and icons per workspace with `workspace N { label; icon; }`. Hover a pill for its card (see [Workspace cards](#workspace-cards)). |
+| `taskbar` | Pinned applications, then, after a short divider, the other running ones in screen order (see [Taskbar](#taskbar)). |
 | `minimap` | Optional map of the active workspace's scrolling strip, drawn like the workspace cards. Each column is divided into its stacked windows. The focused window uses the accent, the viewport is outlined when part of the strip lies offscreen, and pinned columns sit apart in an accent-tinted tray with a rail along the edge they are pinned to. Click a window to focus it, or scroll over the map to move between columns. |
 | `focused-window` | Icon and title of the focused window, shortened in the middle to 50 characters (`max-length`). The tooltip has the full title. |
 | `tray` | StatusNotifierItem icons. Click activates, right-click opens the item's menu. The Shell owns `org.kde.StatusNotifierWatcher` while a tray is placed. |
@@ -81,7 +81,7 @@ panel you want to keep from
 | `volume` | Default output level. Scroll to change it by `step` (5%). |
 | `battery` | Charge and charging state from UPower; shown only when a battery is present. Turns critical at 15%. |
 | `notifications` | Bell with the count of notifications that still need attention. Click opens the Notification Center; right-click toggles Do Not Disturb. `?` means Notify is unreachable. |
-| `clock` | Time, and date in expanded views. Click opens a calendar that starts weeks on the region's first weekday. |
+| `clock` | Time, and date in expanded views. Click opens a calendar that starts weeks on the region's first weekday, with the coming week's events from local calendars above the month (see [Calendar agenda](#calendar-agenda)). |
 | `media` | The selected media player; hidden when none is open (see [Media](#media)). |
 | `idle-inhibitor` | **Keep awake**: prevents idle actions while on. Starts off at every login. |
 | `script` | The output of a command, rerun every `interval` seconds. |
@@ -99,21 +99,29 @@ Standalone Nerd Font glyphs use `Symbols Nerd Font Mono` when it is installed.
 
 The taskbar shows the desktop files listed in `pinned`, then the other open
 applications in screen order (by workspace, then column), grouped by desktop file.
-A short stroke on the bar's edge marks a running application, a longer one several
-windows, and the longest, in the accent color, the focused one.
+A dot on the bar's edge marks a running application, a short pill several windows,
+and a long pill in the accent color the focused one.
 
 - **Click** focuses the application's most recent window, or launches it. Click
   again to cycle through its windows from left to right.
 - **Middle-click** starts another instance.
-- **Right-click** opens the application menu: Open (or New window while it runs),
-  the desktop file's own actions, and **Pin to taskbar** / **Unpin from taskbar**.
-  Window sizes, tabs, floating and column pins live in the window titlebars.
+- **Right-click** opens the application menu, headed by the application's name:
+  Open (or New window while it runs),
+  the desktop file's own actions, **Pin to taskbar** / **Unpin from taskbar**, and
+  **Quit** in the danger tone while it runs (**Quit · close N windows** with several), which asks
+  each of its windows to close (applications still confirm unsaved work). Window sizes, tabs, floating and column pins live
+  in the window titlebars; a single window closes from the hover card.
 - **Hover** a running application to see its windows in screen order, each with a
   thumbnail, its title and its workspace (or **Scratchpad** for a window in the
   scratchpad); the focused one is highlighted. Click a window to focus it, or its
   **×** to close it. The card stays while you move the pointer into it and closes
   shortly after the pointer leaves both. Moving to another application switches
-  cards at once. Up to eight windows are listed, then a count of the rest. An
+  cards at once. Up to eight windows are listed, then a count of the rest; a window
+  titled like its application shows where it is instead. A single window is shown
+  as a large thumbnail in the window's own shape, the card as wide as it, captioned
+  with its title (unless
+  it only repeats the application's name) and workspace, with **×** beside
+  the application's name. An
   application with no open window shows its name instead.
   `tooltip #false` on the taskbar module turns the card off.
 
@@ -135,25 +143,51 @@ Launched applications each run in their own systemd user scope,
 
 Hovering a workspace pill shows that workspace's columns drawn to scale, like the
 `minimap` module: stacked windows share their column, the focused window has an
-accent ring, a frame marks the part on screen when the strip is wider than it, and
+accent ring, a frame always outlines the part on screen (every window the screen shows,
+measured when the card opens, so it follows a resized or rescaled output; a window
+scrolled under a side bar counts as off screen), and
 pinned columns sit apart in the same tinted tray with a rail along their pinned
 edge, and a pin badge on their top window when it has room. Each window shows its
-live thumbnail, or its application's icon until the thumbnail arrives. Floating
-windows are counted below the strip. Click a window to focus it; Niri switches to
+live thumbnail, or its application's icon until the thumbnail arrives, and
+each column is captioned below the strip by its window's application icon and
+window title (the focused window's in bold), with the application's name on a
+second line when the title says more; a title too long for one line takes both. Floating windows are counted below the strip. Click a window to focus it; Niri switches to
 its workspace. An empty workspace says **Empty**. `tooltip #false` on the
 workspaces module turns the cards off.
 
+## Calendar agenda
+
+The calendar is headed with today's date; where weeks start on Monday, the ISO
+week number follows the month's name. Above the month, the calendar lists the
+next four events (and the rest of the last day listed) under their days' names
+and dates, and counts the others of the coming week; an event that runs past
+midnight ends "next day"; an event under way or starting within
+the hour leads with **Now** or **In N min** in the accent color. Days with
+events carry a dot; choosing a day lists that day's events instead, and choosing
+it again returns to what is coming. The
+agenda reads iCalendar files that are already on this computer, six weeks ahead
+at most, and never writes them or goes online:
+
+- Evolution's local calendars, `$XDG_DATA_HOME/evolution/calendar/*/calendar.ics`
+  (GNOME Calendar's on-this-computer calendar is one of them);
+- vdir folders such as vdirsyncer and khal keep, `$XDG_DATA_HOME/calendars/**/*.ics`.
+
+One-off, all-day and repeating events (daily, weekly by weekday, monthly and
+yearly, with an interval, a count or an end date) are shown; cancelled events
+are not. Times with a time zone name are read as local time. The files are
+reread every minute. Without any calendar file, the calendar shows no agenda.
+
 ## Quick settings
 
-Quick settings is the bar's panel. By default it opens in a 416-pixel side drawer
+Quick settings is the bar's panel. By default it opens in a 448-pixel side drawer
 and contains:
 
-- **Wi-Fi** and **Bluetooth** tiles. The tile switches the radio; its chevron opens
-  the full panel. A radio without its service shows a plain row instead.
-- **Do Not Disturb** and **Keep awake** tiles. A tile that is on uses the accent fill.
-- **Sound**: the default output with a level slider and mute button.
-- **Power & display**: battery charge and, with a built-in backlight, a brightness
-  slider.
+- **Wi-Fi** and **Bluetooth** tiles. The tile switches the radio; the chevron
+  area past its divider opens the full panel. A radio without its service shows a plain row instead.
+- **Do Not Disturb** and **Keep awake** tiles. A tile that is on is filled with the accent, with dark text.
+- **Sound**: the default output with a **Volume** slider and mute button.
+- **Power & display**: battery charge and, with a built-in backlight, a
+  **Brightness** slider.
 - A footer with media, **Lock**, **Suspend** and **Power** (Hibernate, Log out…,
   Reboot… and Power off…).
 
@@ -174,7 +208,7 @@ change the contents; `session-hibernate`, `session-logout`, `session-reboot` and
 `"push-bar"` opens the drawer at the edge and moves the bar inward. Both overlay
 windows without resizing them, and apply to left and right bars. Remove `height` and
 `max-height` to let a drawer fill the screen height. Panels slide and fade in
-(`animation { open-ms 180; close-ms 160; }`; `0` disables a transition, as does
+(`animation { open-ms 240; close-ms 150; }`; `0` disables a transition, as does
 `appearance { reduced-motion #true; }`). Escape clears an active search, then closes
 the panel.
 
@@ -198,16 +232,23 @@ packages and the updater install them together.
 
 ### Wi-Fi
 
-Lists networks, connects to open and saved networks, asks for personal (WPA-PSK)
-passwords and joins hidden personal networks. It uses NetworkManager, or iwd when
+The heading switches Wi-Fi on or off and refreshes the list. The network in use
+comes first, **Connected** (or **Connecting…**, **Couldn’t connect**) with
+**Disconnect** and **Forget**; the others follow under **Networks**, each saying
+whether it is saved, how it is secured and its signal (**Saved · Secured · Signal
+82%**), with **Connect**. It connects to open and saved networks, asks for personal
+(WPA-PSK) passwords, and **Join other network…** joins a hidden personal network by
+name; both prompts have **Cancel**. It uses NetworkManager, or iwd when
 NetworkManager is absent. The system service keeps the credentials and decides who
 may change them. Enterprise (802.1X) networks are set up in Settings' **Network**
 page. `CANOPA_WIFI_PROVIDER_BACKEND=networkmanager|iwd|none` restricts the choice.
 
 ### Bluetooth
 
-Uses BlueZ. Turn on an adapter, choose **Find devices**, then pair, connect or
-disconnect from the device list. Passkey and PIN requests appear in the panel.
+Uses BlueZ. The **Bluetooth** row switches the adapter and says the name other
+devices see; **My devices** lists the paired ones with their state and battery, to
+connect or disconnect; **Find devices** adds **Other devices** in range, to pair,
+while it searches. Passkey and PIN requests appear in the panel.
 Closing the panel stops discovery and cancels an unfinished pairing. Settings'
 **Bluetooth** page manages trust, forgetting and battery levels.
 
@@ -320,8 +361,8 @@ volume, 50 for brightness). Rebind the keys on the Settings **Shortcuts** page.
 These features use the Canopa Niri fork that the `canopa-compositor` package
 installs.
 
-The taskbar uses a neutral running-app marker while Overview is open, leaving
-the compositor to highlight the selected preview.
+The taskbar keeps marking the focused application while Overview is open, in
+the accent that rings its workspace there.
 
 - **Window bar** lists the workspace's windows in layout order at the top of
   the work area, each with its application icon and title. It appears when there
@@ -338,9 +379,18 @@ the compositor to highlight the selected preview.
   fits beside the focused one stays partly in view, cut one gap from the panel.
   When floating windows cover the tiles, choose a tiled window to reveal the
   tiles. Choose a floating window or the floating button to restore the layer.
-- **Overview**: Niri's overview zooms the workspaces out and stacks them. The
-  Overview button stays highlighted while it is open. Click a window, or move
-  with the arrow keys and press Enter, to open it.
+- **Overview**: Niri's overview zooms the workspaces out and stacks them, each
+  named above it: its configured name or **Workspace N**, marked **Empty** for
+  the empty one at the end, the current workspace's name brighter and in the
+  focus ring's colour (or the active border's, with the ring off). The shipped
+  Niri defaults turn the names on with `overview { workspace-labels; }`. Click a
+  name to rename the workspace (the same prompt as the bar's **Rename…**), or
+  drag it up or down to move the workspace: it follows the pointer, ringed, while
+  the others slide aside and a faint slot shows where it lands. The
+  fork's `workspace-cards` option presents the workspaces as rounded cards with
+  the wallpaper behind their windows instead. The Overview button stays
+  highlighted while it is open. Click a window, or move with the arrow keys and
+  press Enter, to open it.
 - **Overview typing**: typing in Niri's overview (Super+O, or the top-left hot
   corner) opens Applications with that text. Closing the launcher closes the
   overview. This needs `overview { emit-typed-text; }`, which the shipped Niri

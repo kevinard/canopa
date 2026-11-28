@@ -1432,6 +1432,7 @@ mod tests {
                     icon_name: None,
                     children: Vec::new(),
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 })
                 .collect(),

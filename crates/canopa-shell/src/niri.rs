@@ -24,6 +24,9 @@ pub struct NiriState {
     pub windows_known: bool,
     /// Logical (width, height) of each output by name, from Niri's output list.
     pub output_sizes: std::collections::HashMap<String, (f64, f64)>,
+    /// Room the Shell's own bars reserve at the left and right of each output,
+    /// in logical pixels. Windows scrolled under a bar are off screen.
+    pub view_insets: std::collections::HashMap<String, (f64, f64)>,
 }
 
 impl NiriState {

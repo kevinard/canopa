@@ -3428,7 +3428,7 @@ dependencies = [
 [[package]]
 name = "iced_exdevtools"
 version = "0.19.1"
-source = "git+https://github.com/kevinard/exwlshelleventloop?rev=fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18#fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18"
+source = "git+https://github.com/kevinard/exwlshelleventloop?rev=cf808408f51115d24e2fc8acd245689747748380#cf808408f51115d24e2fc8acd245689747748380"
 dependencies = [
  "iced_debug",
  "iced_devtools",
@@ -3476,7 +3476,7 @@ dependencies = [
 [[package]]
 name = "iced_layershell"
 version = "0.19.1"
-source = "git+https://github.com/kevinard/exwlshelleventloop?rev=fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18#fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18"
+source = "git+https://github.com/kevinard/exwlshelleventloop?rev=cf808408f51115d24e2fc8acd245689747748380#cf808408f51115d24e2fc8acd245689747748380"
 dependencies = [
  "enumflags2",
  "futures",
@@ -3501,7 +3501,7 @@ dependencies = [
 [[package]]
 name = "iced_layershell_macros"
 version = "0.19.1"
-source = "git+https://github.com/kevinard/exwlshelleventloop?rev=fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18#fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18"
+source = "git+https://github.com/kevinard/exwlshelleventloop?rev=cf808408f51115d24e2fc8acd245689747748380#cf808408f51115d24e2fc8acd245689747748380"
 dependencies = [
  "darling",
  "manyhow",
@@ -4238,7 +4238,7 @@ dependencies = [
 [[package]]
 name = "layershellev"
 version = "0.19.1"
-source = "git+https://github.com/kevinard/exwlshelleventloop?rev=fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18#fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18"
+source = "git+https://github.com/kevinard/exwlshelleventloop?rev=cf808408f51115d24e2fc8acd245689747748380#cf808408f51115d24e2fc8acd245689747748380"
 dependencies = [
  "calloop 0.14.4",
  "calloop-wayland-source 0.4.1",
@@ -4820,7 +4820,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 [[package]]
 name = "niri-ipc"
 version = "26.4.0"
-source = "git+https://github.com/kevinard/niri?rev=d3a6f327b79abeb46ac2b04bd01bf2de0a984d78#d3a6f327b79abeb46ac2b04bd01bf2de0a984d78"
+source = "git+https://github.com/kevinard/niri?rev=103bff0aba8a86d8de2d5f322769d00beccbd06f#103bff0aba8a86d8de2d5f322769d00beccbd06f"
 dependencies = [
  "serde",
  "serde_json",
@@ -8443,7 +8443,7 @@ dependencies = [
 [[package]]
 name = "waycrate_xkbkeycode"
 version = "0.19.1"
-source = "git+https://github.com/kevinard/exwlshelleventloop?rev=fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18#fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18"
+source = "git+https://github.com/kevinard/exwlshelleventloop?rev=cf808408f51115d24e2fc8acd245689747748380#cf808408f51115d24e2fc8acd245689747748380"
 dependencies = [
  "calloop 0.14.4",
  "log",

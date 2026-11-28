@@ -226,10 +226,11 @@ fn file_icon(path: &std::path::Path) -> &'static str {
     }
 }
 
-/// A folder under the home directory as `~/…`, as file managers show it.
+/// A folder under the home directory as `~/…`, as file managers show it; the
+/// home directory itself by name.
 fn home_relative(path: &std::path::Path) -> String {
     match std::env::var_os("HOME").map(std::path::PathBuf::from) {
-        Some(home) if home.is_absolute() && path == home => "~".into(),
+        Some(home) if home.is_absolute() && path == home => fl!("shell-launcher-home-folder"),
         Some(home) if home.is_absolute() => match path.strip_prefix(&home) {
             Ok(rest) => format!("~/{}", rest.display()),
             Err(_) => path.display().to_string(),

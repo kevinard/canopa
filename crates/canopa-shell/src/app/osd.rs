@@ -30,8 +30,8 @@ use iced_layershell::reexport::{
 use super::announcer::Announcer;
 use super::{App, Message, messages::IpcResponder};
 
-const WIDTH: u32 = 340;
-const HEIGHT: u32 = 76;
+const WIDTH: u32 = 296;
+const HEIGHT: u32 = 64;
 /// Above the bottom edge, clear of a bottom bar's own reservation.
 const BOTTOM_MARGIN: i32 = 72;
 const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
@@ -226,7 +226,11 @@ fn faded(mut color: iced::Color, opacity: f32) -> iced::Color {
 
 fn indicator_view(indicator: &Indicator, opacity: f32) -> Element<'static, Message> {
     let appearance = crate::theme::appearance();
-    let ui = appearance.style(canopa_theme::UiKind::Notification);
+    let mut ui = appearance.style(canopa_theme::UiKind::Notification);
+    // A pill unless the appearance sets its own corners.
+    if !ui.custom_radius {
+        ui.radius = [canopa_theme::Pixels::whole(HEIGHT / 2); 4];
+    }
     let palette = crate::theme::palette();
     let muted = indicator.muted() || matches!(indicator, Indicator::Unavailable(_));
     let foreground = faded(if muted { palette.muted } else { palette.text }, opacity);
@@ -240,57 +244,71 @@ fn indicator_view(indicator: &Indicator, opacity: f32) -> Element<'static, Messa
     let bar: Element<'static, Message> = match indicator.fill() {
         Some(fill) => {
             let (track, bar) = (
-                faded(palette.raised, opacity),
+                faded(palette.text.scale_alpha(0.14), opacity),
                 faded(if muted { palette.muted } else { palette.accent }, opacity),
             );
             progress_bar(0.0..=1.0, fill)
-                .girth(6.0)
+                .girth(8.0)
                 .style(move |_| progress_bar::Style {
                     background: track.into(),
                     bar: bar.into(),
-                    border: iced::Border::default().rounded(3),
+                    border: iced::Border::default().rounded(4),
                 })
                 .into()
         }
-        None => Space::new().height(Length::Fixed(6.0)).into(),
+        None => Space::new().height(Length::Fixed(8.0)).into(),
     };
     let label = column![
         crate::theme::text(title)
-            .size(crate::theme::label_size())
-            .color(foreground)
+            .size(crate::theme::label_size() + 1.0)
+            .color(faded(palette.muted, opacity))
             .width(Length::Fill)
             .align_x(canopa_ui::direction::text_start())
             .wrapping(iced::widget::text::Wrapping::None),
         bar,
     ]
-    .spacing(8)
+    .spacing(6)
     .width(Length::Fill);
+    // The channel's icon, in the accent while the level is live.
+    let disc = container(crate::theme::icon(
+        icon(indicator),
+        22.0,
+        faded(if muted { palette.muted } else { palette.accent }, opacity),
+    ))
+    .center(28);
     // Icon, title and value in reading order (mirrored for RTL).
     let content = canopa_ui::direction::row([
-        crate::theme::icon(icon(indicator), 24.0, foreground),
+        disc.into(),
         label.into(),
         crate::theme::strong_text(indicator.value())
+            .size(crate::theme::body_size() + 1.0)
             .color(foreground)
-            .width(Length::Fixed(88.0))
+            .width(Length::Fixed(44.0))
             .align_x(canopa_ui::direction::text_end())
             .into(),
     ])
-    .spacing(14)
+    .spacing(10)
     .align_y(Alignment::Center);
-    let mut style = canopa_ui::frame(&appearance, ui);
+    let mut style = crate::theme::glass(
+        canopa_ui::frame(&appearance, ui),
+        crate::theme::Glass::Popover,
+    );
     style.background = style.background.map(|background| match background {
         iced::Background::Color(color) => faded(color, opacity).into(),
         other => other,
     });
     style.border.color = faded(style.border.color, opacity);
     style.text_color = Some(foreground);
-    container(content)
-        .padding([14, 18])
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_y(Length::Fill)
-        .style(move |_| style)
-        .into()
+    crate::theme::glass_region_visible(
+        container(content)
+            .padding([12, 16])
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_y(Length::Fill)
+            .style(move |_| style),
+        ui.radius,
+        opacity > 0.4,
+    )
 }
 
 impl App {

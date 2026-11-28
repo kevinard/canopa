@@ -41,10 +41,11 @@ pub(crate) fn panel_summary(state: &crate::modules::ModuleState) -> Option<Strin
         return None;
     };
     battery.present.then(|| {
-        format!(
-            "{} · {}",
-            canopa_i18n::format::percent(battery.percentage.round()),
-            power_state_text(battery.power_state)
+        // Named, so the charge is never read as the brightness beside it.
+        fl!(
+            "shell-battery-summary",
+            percent = canopa_i18n::format::percent(battery.percentage.round()),
+            state = power_state_text(battery.power_state)
         )
     })
 }

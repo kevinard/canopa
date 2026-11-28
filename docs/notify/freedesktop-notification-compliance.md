@@ -208,6 +208,10 @@ inactive history never removes pending content.
   the existing timeout.
 - At the deadline Notify retires the sender ID, emits `NotificationClosed` with
   reason `1` and keeps an Expired Notification in history.
+- Exception ([Notify ADR 0056](adr/0056-live-actions-after-the-banner.md)): a
+  non-transient notification with a named action (other than `default`) and the
+  server-default timeout only hides its banner at the deadline. It stays live, with
+  its actions in the Center, until the user or the application ends it.
 
 Timer registrations exist only for pending or scheduled live revisions
 ([ADR 0033](adr/0033-timeout-registration-without-tombstones.md));

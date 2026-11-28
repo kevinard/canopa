@@ -1377,12 +1377,22 @@ impl App {
         );
 
         let mut tasks = vec![resize_bar];
+        // A tooltip from the bar never lingers over the panel it opened.
+        tasks.extend(self.close_tooltip_popup_if_open(tree.origin_window));
         self.foreground
             .handle(super::foreground::ForegroundIntent::PanelWindowOpened {
                 window: panel_window,
             });
+        // The opening control's place along the bar; the panel grows from it.
+        let anchor = tree.anchor.map(|bounds| {
+            if edge.is_horizontal() {
+                bounds.center_x()
+            } else {
+                bounds.center_y()
+            }
+        });
         self.foreground
-            .configure_panel_motion(panel_window, &edge, animation);
+            .configure_panel_motion(panel_window, &edge, animation, anchor);
 
         let open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         tasks.push(open_sequence);
@@ -2897,8 +2907,17 @@ mod tests {
         });
 
         assert_eq!(plan.width, PlannedDimension::Exact(372));
-        assert_eq!(plan.height, PlannedDimension::Exact(566));
-        assert_eq!(panel_window_settings(plan).size, Some((372, 566)));
+        // Five or six week rows, as the current month needs.
+        assert!(
+            matches!(plan.height, PlannedDimension::Exact(365 | 402)),
+            "{:?}",
+            plan.height
+        );
+        let height = match plan.height {
+            PlannedDimension::Exact(height) => height,
+            _ => unreachable!(),
+        };
+        assert_eq!(panel_window_settings(plan).size, Some((372, height)));
     }
 
     #[test]

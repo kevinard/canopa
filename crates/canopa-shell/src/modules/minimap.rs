@@ -21,8 +21,10 @@ pub struct MinimapState {
     pub workspace_height: f64,
     /// Floating windows on the workspace, which the strip does not draw.
     pub floating: usize,
-    /// The width of the workspace view in logical pixels, when known.
-    pub view_width: Option<f64>,
+    /// The part of the workspace view that windows show in, from its left
+    /// edge to its right one in logical pixels, when known: the output's width
+    /// less the room the Shell's bars reserve at its sides.
+    pub view: Option<(f64, f64)>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -45,12 +47,12 @@ impl MinimapColumn {
     /// The part of the column on screen, as fractions of its width, or
     /// `None` when it is off screen. Columns without a position count as
     /// visible.
-    pub(crate) fn visible_range(&self, view_width: Option<f64>) -> Option<(f32, f32)> {
-        let (Some(x), Some(view), true) = (self.view_x, view_width, self.width > 0.0) else {
+    pub(crate) fn visible_range(&self, view: Option<(f64, f64)>) -> Option<(f32, f32)> {
+        let (Some(x), Some((left, right)), true) = (self.view_x, view, self.width > 0.0) else {
             return Some((0.0, 1.0));
         };
-        let start = (-x / self.width).clamp(0.0, 1.0);
-        let end = ((view - x) / self.width).clamp(0.0, 1.0);
+        let start = ((left - x) / self.width).clamp(0.0, 1.0);
+        let end = ((right - x) / self.width).clamp(0.0, 1.0);
         (end - start > 0.01).then_some((start as f32, end as f32))
     }
 }
@@ -163,18 +165,19 @@ pub(crate) fn workspace_strip(niri: &NiriState, workspace: &niri_ipc::Workspace)
                 .fold(0.0, f64::max)
         });
 
-    let view_width = workspace
-        .output
-        .as_deref()
-        .and_then(|output| niri.output_sizes.get(output))
-        .map(|(width, _)| *width)
-        .filter(|width| *width > 0.0);
+    // A bar along a side of the output covers that much of the view; Niri
+    // lays windows out beside it.
+    let view = workspace.output.as_deref().and_then(|output| {
+        let (width, _) = niri.output_sizes.get(output)?;
+        let (left, right) = niri.view_insets.get(output).copied().unwrap_or_default();
+        (*width - left - right > 0.0).then_some((left, *width - right))
+    });
 
     MinimapState {
         columns,
         workspace_height,
         floating,
-        view_width,
+        view,
     }
 }
 
@@ -202,6 +205,11 @@ pub(crate) struct StripMetrics {
     pub frame_inset: f32,
     /// Corner radius of a tile, and of the frame (plus the inset).
     pub radius: f32,
+    /// Frame the part on screen even when the whole strip is on screen, so the
+    /// frame always shows which windows the screen holds.
+    pub always_frame: bool,
+    /// The frame's line width.
+    pub frame_width: f32,
 }
 
 /// The bar module's metrics.
@@ -215,6 +223,8 @@ pub(crate) const BAR_STRIP: StripMetrics = StripMetrics {
     min_extent: 2.0,
     frame_inset: 2.0,
     radius: 2.0,
+    always_frame: false,
+    frame_width: 1.0,
 };
 
 impl StripMetrics {
@@ -230,7 +240,7 @@ impl StripMetrics {
 
     /// How much longer a column is drawn than its tiles: the inset and rail
     /// of a pinned column's tray.
-    fn tray_length(&self, column: &MinimapColumn) -> f32 {
+    pub(crate) fn tray_length(&self, column: &MinimapColumn) -> f32 {
         if column.pinned.is_some() {
             2.0 * self.pin_inset + self.pin_rail + self.pin_rail_gap
         } else {
@@ -239,7 +249,7 @@ impl StripMetrics {
     }
 
     /// The space after column `index`.
-    fn gap_after(&self, columns: &[MinimapColumn], index: usize) -> f32 {
+    pub(crate) fn gap_after(&self, columns: &[MinimapColumn], index: usize) -> f32 {
         let pinned_boundary = columns[index].pinned == Some(niri_ipc::PinSide::Left)
             || columns
                 .get(index + 1)
@@ -326,7 +336,7 @@ impl StripMetrics {
     /// The part of the strip on screen, in strip pixels from its start, when
     /// Niri reports the view and part of the strip is off screen.
     pub(crate) fn visible_span(&self, state: &MinimapState, lengths: &[f32]) -> Option<(f32, f32)> {
-        state.view_width?;
+        state.view?;
         if state.columns.iter().all(|column| column.view_x.is_none()) {
             return None;
         }
@@ -336,7 +346,7 @@ impl StripMetrics {
         for (index, (column, length)) in state.columns.iter().zip(lengths).enumerate() {
             // A pinned column's tray goes with it.
             let length = length + self.tray_length(column);
-            match column.visible_range(state.view_width) {
+            match column.visible_range(state.view) {
                 Some((from, to)) => {
                     clipped |= from > 0.0 || to < 1.0;
                     let (start, end) = (offset + from * length, offset + to * length);
@@ -348,7 +358,7 @@ impl StripMetrics {
                 offset += length + self.gap_after(&state.columns, index);
             }
         }
-        span.filter(|_| clipped)
+        span.filter(|_| clipped || self.always_frame)
     }
 }
 
@@ -433,7 +443,7 @@ pub(crate) fn draw_strip<'a, Message: 'a>(
                 Space::new().height(gap).into()
             });
         }
-        let on_screen = column_state.visible_range(state.view_width).is_some();
+        let on_screen = column_state.visible_range(state.view).is_some();
         let tray = metrics.pin_tray(column_state, size);
         let tile_size = tray.map_or(size, |tray| tray.tile_size);
         let tiles = column_state
@@ -489,7 +499,7 @@ pub(crate) fn draw_strip<'a, Message: 'a>(
     let frame = container(Space::new()).style(move |_| container::Style {
         border: iced::Border {
             color: frame_color,
-            width: 1.0,
+            width: metrics.frame_width,
             radius: radius.into(),
         },
         ..Default::default()
@@ -893,6 +903,21 @@ mod tests {
     }
 
     #[test]
+    fn the_view_leaves_out_the_bars_at_its_sides() {
+        let mut state = niri(vec![window(12, 1, Some((1, 1)), (960.0, 500.0))]);
+        state.output_sizes.insert("eDP-1".into(), (1920.0, 1080.0));
+        assert_eq!(
+            strip(&state, "eDP-1").expect("strip").view,
+            Some((0.0, 1920.0))
+        );
+        state.view_insets.insert("eDP-1".into(), (76.0, 0.0));
+        assert_eq!(
+            strip(&state, "eDP-1").expect("strip").view,
+            Some((76.0, 1920.0))
+        );
+    }
+
+    #[test]
     fn output_height_sets_the_scale_when_known() {
         let mut state = niri(vec![window(12, 1, Some((1, 1)), (960.0, 500.0))]);
         state.output_sizes.insert("eDP-1".into(), (1920.0, 1080.0));
@@ -918,7 +943,7 @@ mod tests {
             ],
             workspace_height: 1000.0,
             floating: 0,
-            view_width: None,
+            view: None,
         };
 
         assert_eq!(BAR_STRIP.column_lengths(&state, 20.0, 0.0), [20.0, 10.0]);
@@ -960,22 +985,33 @@ mod tests {
             columns: vec![column(-520.0), column(0.0), column(750.0), column(1270.0)],
             workspace_height: 1000.0,
             floating: 0,
-            view_width: Some(1000.0),
+            view: Some((0.0, 1000.0)),
         };
         let lengths = [10.0, 10.0, 20.0, 10.0];
-        assert_eq!(state.columns[0].visible_range(state.view_width), None);
-        assert_eq!(
-            state.columns[2].visible_range(state.view_width),
-            Some((0.0, 0.5))
-        );
+        assert_eq!(state.columns[0].visible_range(state.view), None);
+        assert_eq!(state.columns[2].visible_range(state.view), Some((0.0, 0.5)));
         assert_eq!(BAR_STRIP.visible_span(&state, &lengths), Some((12.0, 34.0)));
+        // A column scrolled under a bar at the side of the view is off screen.
+        let beside_bar = MinimapColumn {
+            width: 500.0,
+            view_x: Some(-424.0),
+            ..Default::default()
+        };
+        assert_eq!(beside_bar.visible_range(Some((76.0, 1000.0))), None);
+        assert!(beside_bar.visible_range(Some((0.0, 1000.0))).is_some());
 
-        // Everything on screen, or no positions from Niri: no frame.
+        // Everything on screen, or no positions from Niri: no frame on the bar.
         let all = MinimapState {
             columns: vec![column(0.0), column(500.0)],
             ..state.clone()
         };
         assert_eq!(BAR_STRIP.visible_span(&all, &lengths), None);
+        // A strip that always frames the screen still frames every column on it.
+        let framed = StripMetrics {
+            always_frame: true,
+            ..BAR_STRIP
+        };
+        assert_eq!(framed.visible_span(&all, &lengths), Some((0.0, 22.0)));
         let unknown = MinimapState {
             columns: vec![MinimapColumn {
                 width: 500.0,

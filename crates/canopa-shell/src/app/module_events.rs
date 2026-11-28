@@ -89,11 +89,17 @@ impl App {
             ModuleRuntimeEvent::Detail { target, message } => {
                 self.handle_module_detail_message(target, message)
             }
-            ModuleRuntimeEvent::ModuleClick(id, window) => self.dispatch_module_interaction(
-                &id,
-                crate::modules::InteractionEvent::Clicked,
-                window,
-            ),
+            ModuleRuntimeEvent::ModuleClick(id, window) => {
+                // A click answers the tooltip's question: it leaves with it.
+                let mut tasks = self.close_tooltip_popup_if_open(window);
+                self.surface_mut(window).tooltip_pending = None;
+                tasks.push(self.dispatch_module_interaction(
+                    &id,
+                    crate::modules::InteractionEvent::Clicked,
+                    window,
+                ));
+                Task::batch(tasks)
+            }
             ModuleRuntimeEvent::ModuleRightClick(id, window) => self.dispatch_module_interaction(
                 &id,
                 crate::modules::InteractionEvent::RightClicked(window),

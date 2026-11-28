@@ -25,6 +25,20 @@ pub struct MenuItem {
     pub is_separator: bool,
     /// A check or radio item's state (DBusMenu `toggle-type`, `toggle-state`).
     pub toggle: Option<MenuToggle>,
+    /// How the item reads: a heading naming the menu's target, or an action
+    /// that ends or removes something.
+    pub emphasis: MenuEmphasis,
+}
+
+/// The look of a menu item beyond its label.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MenuEmphasis {
+    #[default]
+    Normal,
+    /// A non-interactive heading, such as the application a menu acts on.
+    Heading,
+    /// An action that quits or removes something, in the danger tone.
+    Destructive,
 }
 
 /// A checkable menu item and whether it is checked.
@@ -72,14 +86,27 @@ pub fn view_menu_popup<'a>(
         .filter(|i| i.visible)
         .map(|item| {
             if item.is_separator {
-                container(rule::horizontal(1))
-                    .padding([2, 8])
-                    .width(Length::Fill)
-                    .into()
+                container(rule::horizontal(1).style(|theme| {
+                    let mut style = rule::default(theme);
+                    style.color = crate::theme::palette().text.scale_alpha(0.12);
+                    style
+                }))
+                .padding([4, 10])
+                .width(Length::Fill)
+                .into()
             } else {
-                let label = crate::theme::text(&item.label)
-                    .size(crate::theme::body_size() * 13.0 / 14.0)
-                    .wrapping(iced::widget::text::Wrapping::None);
+                let palette = crate::theme::palette();
+                let label = match item.emphasis {
+                    // A heading names what the menu acts on, above its items.
+                    MenuEmphasis::Heading => crate::theme::strong_text(&item.label)
+                        .size(crate::theme::label_size())
+                        .color(palette.muted),
+                    MenuEmphasis::Destructive => crate::theme::text(&item.label)
+                        .size(menu_text_size())
+                        .color(palette.danger),
+                    MenuEmphasis::Normal => crate::theme::text(&item.label).size(menu_text_size()),
+                }
+                .wrapping(iced::widget::text::Wrapping::None);
                 let hovered = item.enabled && hovered_item == Some(item.id.as_str());
                 let focused = item.enabled && focused_item == Some(item.id.as_str());
                 let row = container(label)
@@ -91,7 +118,7 @@ pub fn view_menu_popup<'a>(
                             row_ui,
                             focused,
                             hovered,
-                            !item.enabled,
+                            !item.enabled && item.emphasis != MenuEmphasis::Heading,
                             focused,
                         )
                     });
@@ -140,14 +167,20 @@ pub fn view_menu_popup<'a>(
 
     // Wrap the entire item list in a mouse_area so hover clears only when the pointer
     // leaves the menu, not when crossing between adjacent items.
-    let menu_content = iced::widget::mouse_area(
+    let menu_content = iced::widget::mouse_area(crate::theme::glass_region(
         container(semantic(
             Node::menu("Menu").key("tray-menu"),
             column(items).spacing(ui.gap.px()),
         ))
-        .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui))
+        .style(move |_| {
+            crate::theme::glass(
+                canopa_ui::frame(&crate::theme::appearance(), ui),
+                crate::theme::Glass::Popover,
+            )
+        })
         .padding(canopa_ui::content_padding(ui)),
-    )
+        ui.radius,
+    ))
     .on_exit(crate::app::Message::Menu(
         crate::app::messages::MenuEvent::ItemHoverExit(window),
     ));
@@ -162,17 +195,17 @@ pub fn view_menu_popup<'a>(
 /// Used to size the layer-shell popup window before it is opened.
 /// All measurements are in logical pixels.
 ///
-/// Per-item heights (empirically tuned for Iced default font at size 13):
-///   - enabled / disabled item: padding [4, 12] (8px) + ~17px line height (size 13 * LineHeight::Relative(1.3)) + 1px rounding = 26px
-///   - separator: padding [2, 8] + 1px rule = 5px
+/// Per-item heights (at the default body size 14):
+///   - enabled / disabled item: padding [6, 12] (12px) + ~19px line height (size 14 * LineHeight::Relative(1.3)) + 1px rounding = 32px
+///   - separator: padding [4, 10] + 1px rule = 9px
 ///   - outer container: padding(4) = 8px vertical, 8px horizontal
 ///
 /// Width = max(MIN_WIDTH, longest_label_chars * CHAR_WIDTH + item_h_padding + outer_h_padding)
 pub(crate) fn popup_row_metrics() -> (canopa_theme::ResolvedStyle, f32) {
     let appearance = crate::theme::appearance();
     let mut base = canopa_theme::Appearance::default().style(canopa_theme::UiKind::MenuRow);
-    base.padding = canopa_theme::Insets::axes(4, 12);
-    base.radius = [canopa_theme::Pixels::whole(3); 4];
+    base.padding = canopa_theme::Insets::axes(6, 12);
+    base.radius = [canopa_theme::Pixels::whole(8); 4];
     base.border_color = canopa_theme::ColorValue::Rgba(canopa_theme::Rgb(0, 0, 0), 0);
     let ui = base.apply(appearance.customization.ui[canopa_theme::UiKind::MenuRow as usize]);
     let border = if ui.custom_border {
@@ -180,10 +213,13 @@ pub(crate) fn popup_row_metrics() -> (canopa_theme::ResolvedStyle, f32) {
     } else {
         0.0
     };
-    let height = (crate::theme::body_size() * 13.0 / 14.0 * 1.3 + ui.padding.vertical() + border)
-        .ceil()
-        + 1.0;
+    let height = (menu_text_size() * 1.3 + ui.padding.vertical() + border).ceil() + 1.0;
     (ui, height)
+}
+
+/// Menu items use the body text size, like the rows of panels and the launcher.
+fn menu_text_size() -> f32 {
+    crate::theme::body_size()
 }
 
 pub fn popup_size(tree: &MenuTree) -> (u32, u32) {
@@ -194,7 +230,7 @@ pub fn popup_size(tree: &MenuTree) -> (u32, u32) {
         .iter()
         .map(|i| {
             if i.is_separator {
-                5.0
+                9.0
             } else {
                 row_height + row.margin.vertical()
             }
@@ -212,7 +248,7 @@ pub fn popup_size(tree: &MenuTree) -> (u32, u32) {
         .iter()
         .filter(|i| !i.is_separator)
         .map(|i| {
-            crate::theme::text_width(&i.label, crate::theme::body_size() * 13.0 / 14.0)
+            crate::theme::text_width(&i.label, menu_text_size())
                 .max(i.label.chars().count() as f32 * 8.0 * crate::theme::body_size() / 14.0)
         })
         .fold(0.0, f32::max);
@@ -268,14 +304,15 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor: (0, 0),
             screen_size: (0, 0),
         };
         let (w, h) = popup_size(&tree);
-        // height: 1 item * 26 + 16 outer = 42
-        assert_eq!(h, 42);
+        // height: 1 item * 32 + 16 outer = 48
+        assert_eq!(h, 48);
         // width: max(150, 4*8 + 24 + 16) = max(150, 72) = 150
         assert_eq!(w, 150);
     }
@@ -292,6 +329,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 MenuItem {
@@ -302,6 +340,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: true,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 MenuItem {
@@ -312,6 +351,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
             ],
@@ -319,8 +359,8 @@ mod tests {
             screen_size: (0, 0),
         };
         let (_, h) = popup_size(&tree);
-        // 2 items * 26 + 1 sep * 5 + 16 outer + 2 gaps * 4 = 81
-        assert_eq!(h, 81);
+        // 2 items * 32 + 1 sep * 9 + 16 outer + 2 gaps * 4 = 97
+        assert_eq!(h, 97);
     }
 
     #[test]
@@ -335,6 +375,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 MenuItem {
@@ -345,6 +386,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
             ],
@@ -352,8 +394,8 @@ mod tests {
             screen_size: (0, 0),
         };
         let (_, h) = popup_size(&tree);
-        // Only 1 visible item: 26 + 16 = 42
-        assert_eq!(h, 42);
+        // Only 1 visible item: 32 + 16 = 48
+        assert_eq!(h, 48);
     }
 
     #[test]
@@ -368,6 +410,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
                 MenuItem {
@@ -378,6 +421,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    emphasis: Default::default(),
                     toggle: None,
                 },
             ],
@@ -400,6 +444,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             }],
             anchor: (100, 200),
@@ -419,6 +464,7 @@ mod tests {
             icon_name: None,
             children: vec![],
             is_separator: true,
+            emphasis: Default::default(),
             toggle: None,
         };
         assert!(sep.is_separator);
@@ -435,8 +481,15 @@ mod tests {
             icon_name: None,
             children: vec![],
             is_separator: false,
+            emphasis: Default::default(),
             toggle: None,
         };
         assert!(!item.enabled);
     }
+}
+
+/// Whether a menu belongs to the Shell itself (the taskbar's or a workspace's)
+/// rather than to a tray item's DBusMenu: its service is not a bus name.
+pub(crate) fn is_shell_menu(service: &str) -> bool {
+    service.starts_with("canopa-shell/")
 }

@@ -41,7 +41,13 @@ fn spine_frame(
             .iter()
             .any(|state| state.background.is_some() || state.border_color.is_some());
     if configured {
-        return crate::theme::highlighted_frame(ui, selected, hovered, false, focused);
+        let mut frame = crate::theme::highlighted_frame(ui, selected, hovered, false, focused);
+        // Active is a fill on the spine; an outline only ever marks keyboard
+        // focus (or a border the configuration asks for).
+        if !focused && !ui.custom_border {
+            frame.border.width = 0.0;
+        }
+        return frame;
     }
     let palette = crate::theme::palette();
     let mut frame = canopa_ui::frame(

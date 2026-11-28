@@ -22,8 +22,8 @@ exists), **Drop** (no longer needed).
 | winit | 0.30.13 | 29 files, +3,690/−60 | Files, portal, Settings (via iced_winit) | Port to 0.31; upstream focus, inhibitor, parents |
 | iced_winit | 0.14.0 | 6 files, +660/−41 | all ordinary Iced windows | Upstream transient/dialog/token/event batching |
 | iced_runtime | 0.14.0 | 4 files, +632 | same | Public API for the above |
-| iced_layershell | 0.19.1 (waycrate) | 7 files, +261/−16 | Shell, Notify | Replace output/token parts; upstream the rest |
-| layershellev | 0.19.1 (waycrate) | 3 files, +243 | Shell, Notify | Same |
+| iced_layershell | 0.19.1 (waycrate) | 7 files, +266/−16 | Shell, Notify | Replace output/token parts; upstream the rest |
+| layershellev | 0.19.1 (waycrate) | 3 files, +347 | Shell, Notify | Same |
 | reis | 0.7.1 | 2 files, +54 | portal | Upstream `read_chunk` |
 | uucore | 0.12.0 | 1 file, +51 | Files | Upstream or reimplement (~50 lines) |
 | Niri + Smithay | Niri b22eb842, Smithay 8a270232 | 41 files, +11,191/−230 (Niri); 8 files, +279 (Smithay) | the packaged compositor | Upstream fixes; replace shortcuts; keep capture/remote input optional |
@@ -82,6 +82,7 @@ rewritten (v0.21.4, 2026-11-06), so a rebase is a port.
 | L4 | Retired-window cleanup after output loss (alias lookup, purge pending actions) | Actions retried forever after output loss | unverified on 0.21 | **Upstream** |
 | L5 | Handle `RedrawAll`/`RelayoutAll` (ignored upstream) | Idle bars kept blank icons after async image load | not handled on master | **Upstream** |
 | L6 | Explicit `None` for the new runtime actions | Required by iced_runtime additions | — | Keep while R1 exists |
+| L7 | `SetBlurRegion` (ext-background-effect-v1: per-unit effect object, blur region from rectangles, blur capability) | Glass surfaces of the Shell and Notify blur exactly their visible shape ([PR #7](https://github.com/kevinard/exwlshelleventloop/pull/7)) | none at 0.19.1 or on master | **Upstream** (port to exwlshellev) |
 
 ## reis 0.7.1
 
@@ -156,6 +157,8 @@ private sockets.
 | Pinned columns: `PinColumn`/`UnpinColumn`/`TogglePinnedColumn`, `open-pinned`, `WindowLayout.pinned` | `canopa/pinned-columns`, base (#20) | Columns that stay on screen (10) | No upstream equivalent | **Discuss upstream** |
 | Optional `layout { titlebar { … } }` (style, button order and side, title alignment, double-click action), `draw-titlebar` window rule, reserved frame geometry and bounds, pointer/touch controls with hover and pressed states | `canopa/titlebars`, base ([#22](https://github.com/kevinard/niri/pull/22)) | Consistent frames for SSD windows ([ADR 0153](adr/0153-compositor-owned-ssd-titlebars.md), style from appearance per [ADR 0155](adr/0155-titlebar-style-from-appearance.md)) | No upstream submission planned | **Keep**, Canopa presentation |
 | Work-area clipping, a window bar (always, on demand or off) with app icons, a sliding focus fill, overflow counts and window thumbnails, a titlebar layout menu, folding pinned columns and a floating scratchpad | `canopa/framed-overview`, base ([#23](https://github.com/kevinard/niri/pull/23)) | Orient users in scrolling layouts and recover hidden floating windows ([ADR 0160](adr/0160-window-bar-and-scrolling-presentation.md)) | Upstream discussion [#4197](https://github.com/niri-wm/niri/discussions/4197) covers offscreen-window navigation | **Keep**, Canopa presentation |
+| `overview { workspace-cards; }`: backdrop layers drawn inside rounded zoomed-out workspaces centred on the working area, a dimmed backdrop, workspace labels, a veiled empty workspace and outlined cards with the current one ringed, window names on the previews, cards that fill the screen and a compact empty workspace | `canopa/overview-workspace-cards`, on canopa/main ([#25](https://github.com/kevinard/niri/pull/25)) | A legible Overview with named workspaces | Upstream draws backdrop layers only in the backdrop | **Discuss upstream** |
+| `overview { workspace-labels; }`: workspace names in the regular overview; drag a label to move its workspace, and the `OverviewWorkspaceLabelClicked` IPC event for a click | `canopa/overview-workspace-labels` and `canopa/overview-workspace-label-actions`, on canopa/main ([#26](https://github.com/kevinard/niri/pull/26), [#27](https://github.com/kevinard/niri/pull/27)) | Named, reorderable workspaces in the Overview | Upstream names workspaces only in its own UI and has no workspace drag | **Discuss upstream** |
 | Smithay `DrmDeviceFd::set_keep_last_frame` (surfaces and device left as they are on drop, framebuffers closed with `CLOSEFB`); Niri `NIRI_KEEP_LAST_FRAME_ON_EXIT` | `canopa/keep-last-frame`, base (#21, Smithay #5) | Login screen to desktop handoff without a blank screen ([ADR 0151](adr/0151-niri-login-compositor.md)) | No CLOSEFB support in Smithay master | **Upstream to Smithay**; Niri may prefer a config option |
 
 Most fork behavior lives in dedicated modules: `dbus/global_shortcuts*`,

@@ -102,6 +102,9 @@ impl ExternalPanelContent {
                 request_activation_token: false,
                 destructive: false,
                 pressed: None,
+                secondary: false,
+                primary: false,
+                symbol: None,
             }],
             error: Some(fl!("shell-provider-failed-explanation")),
         };
@@ -254,13 +257,19 @@ pub fn panel_module_frame<'a>(
 pub const PANEL_CLOSE_ID: &str = "panel-close";
 
 /// The same host-owned heading and dismiss control in both panel presentations.
-pub fn panel_header<'a>(title: String) -> iced::Element<'a, crate::app::Message> {
-    panel_header_with_back(title, false)
-}
-
 pub fn panel_header_with_back<'a>(
     title: String,
     back: bool,
+) -> iced::Element<'a, crate::app::Message> {
+    panel_header_with_controls(title, back, Vec::new())
+}
+
+/// A panel heading with view controls (such as grouping and settings) between the
+/// title and Close.
+pub fn panel_header_with_controls<'a>(
+    title: String,
+    back: bool,
+    controls: Vec<iced::Element<'a, crate::app::Message>>,
 ) -> iced::Element<'a, crate::app::Message> {
     use canopa_ui::accessibility::{Node, semantic};
 
@@ -289,6 +298,7 @@ pub fn panel_header_with_back<'a>(
             .width(iced::Length::Fill)
             .align_x(canopa_ui::direction::text_start()),
     ));
+    cells.extend(controls);
     cells.push(semantic(
         Node::button(fl!("shell-close"))
             .key("panel-close")

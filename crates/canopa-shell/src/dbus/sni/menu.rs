@@ -107,6 +107,7 @@ fn owned_value_to_menu_item(
                 .and_then(|ov| ov.downcast_ref::<i32>().ok())
                 .unwrap_or(-1),
         ),
+        emphasis: Default::default(),
     })
 }
 
@@ -216,6 +217,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                emphasis: Default::default(),
                 toggle: None,
             })
             .collect();

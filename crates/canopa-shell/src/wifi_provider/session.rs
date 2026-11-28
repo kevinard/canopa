@@ -363,9 +363,13 @@ mod tests {
             .write_all(
                 &v5::HostMessage::event(
                     networks.revision,
-                    v5::Interaction::Form(ProviderEvent::SelectableListEntryActivated {
-                        element_id: "networks".into(),
-                        entry_id: "home".into(),
+                    // The list is rich content: its rows connect through actions.
+                    v5::Interaction::Rich(canopa_panel_protocol::InteractionEvent::Invoke {
+                        target: canopa_panel_protocol::InteractionTarget::Item {
+                            id: "home".into(),
+                        },
+                        action_key: "connect".into(),
+                        value: None,
                     }),
                 )
                 .encode()

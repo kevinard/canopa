@@ -14,6 +14,13 @@ pub struct Window {
 }
 
 pub(crate) fn snapshot(state: &NiriState) -> Vec<Window> {
+    // The output only tells windows apart when there is more than one.
+    let outputs: std::collections::HashSet<_> = state
+        .workspaces
+        .iter()
+        .filter_map(|workspace| workspace.output.as_deref())
+        .collect();
+    let several_outputs = outputs.len() > 1;
     let mut windows: Vec<_> = state
         .windows
         .values()
@@ -31,7 +38,7 @@ pub(crate) fn snapshot(state: &NiriState) -> Vec<Window> {
                             .name
                             .clone()
                             .unwrap_or_else(|| workspace.idx.to_string());
-                        match &workspace.output {
+                        match workspace.output.as_ref().filter(|_| several_outputs) {
                             Some(output) => fl!(
                                 "shell-window-workspace-on-output",
                                 workspace = name,
@@ -144,11 +151,20 @@ pub(crate) fn results(
                 item: ResultItem {
                     id: format!("window:{}", window.id),
                     label: label.into(),
-                    description: fl!(
-                        "shell-window-description",
-                        application = name.to_owned(),
-                        workspace = window.workspace.clone()
-                    ),
+                    // A window titled like its application, which the title
+                    // already names, says only where it is.
+                    description: if label.trim() == name.trim() {
+                        fl!(
+                            "shell-window-description-place",
+                            workspace = window.workspace.clone()
+                        )
+                    } else {
+                        fl!(
+                            "shell-window-description",
+                            application = name.to_owned(),
+                            workspace = window.workspace.clone()
+                        )
+                    },
                     icon: app.and_then(|app| app.icon.clone()),
                     actions,
                 },

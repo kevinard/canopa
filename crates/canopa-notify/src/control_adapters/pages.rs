@@ -157,6 +157,9 @@ impl Session {
                     request_activation_token: false,
                     destructive: false,
                     pressed: None,
+                    secondary: false,
+                    primary: false,
+                    symbol: None,
                     key: PANEL_UNDO_CLEAR_KEY.into(),
                     label: fl!("notify-center-undo-clear"),
                     value: Some(token.to_string()),
@@ -171,12 +174,17 @@ impl Session {
                     Direction::Grouped
                 },
             )
-            .pressed(grouped);
+            .pressed(grouped)
+            .secondary()
+            .symbol("view-group-symbolic");
             group.label = fl!("notify-center-group-by-app");
             content.actions.push(group);
-            content
-                .actions
-                .push(navigation(self.generation, Direction::Settings));
+            // Viewing and settings sit apart from the actions on notifications.
+            content.actions.push(
+                navigation(self.generation, Direction::Settings)
+                    .secondary()
+                    .symbol("preferences-system-symbolic"),
+            );
         }
         // The reading view names the state; Settings offers the choices.
         let (status, suppression) = control.do_not_disturb_view();
@@ -193,6 +201,26 @@ impl Session {
                 "notify-center-title-suppressed",
                 suppression = suppression_text(suppression)
             );
+        }
+        // An empty reading view says so, instead of showing only its toolbar.
+        if !self.settings && content.sections.is_empty() && content.error.is_none() {
+            content.sections.push(PanelSection {
+                id: "empty".into(),
+                title: String::new(),
+                icon: None,
+                items: vec![PanelItem {
+                    id: "empty".into(),
+                    title: fl!("notify-center-empty"),
+                    attribution: None,
+                    body: Some(fl!("notify-center-empty-body")),
+                    styled_body: None,
+                    rich_body: None,
+                    metadata: Vec::new(),
+                    actions: Vec::new(),
+                    slider: None,
+                }],
+                controls: Vec::new(),
+            });
         }
         if self.current.after.is_some() || self.current.action_offset > 0 {
             content
@@ -429,6 +457,9 @@ fn navigation(generation: u64, direction: Direction) -> PanelAction {
         request_activation_token: false,
         destructive: false,
         pressed: None,
+        secondary: false,
+        primary: false,
+        symbol: None,
         key: PAGE_KEY.into(),
         label: match direction {
             Direction::First => fl!("notify-center-first-page"),

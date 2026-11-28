@@ -20,6 +20,8 @@ const RESULTS: &str = "launcher-results";
 /// Browsing and search headings share one height so typing never moves the list.
 const LAUNCHER_HEADING_HEIGHT: f32 = 24.0;
 const CLOSE_ICON: &[u8] = include_bytes!("../../../assets/close.svg");
+/// Result rows the launcher shows before it scrolls.
+const LAUNCHER_ROWS: usize = 8;
 const SEARCH_ICON: &[u8] = include_bytes!("../../../assets/search.svg");
 const APPS_ICON: &[u8] = include_bytes!("../../../assets/app-grid.svg");
 const FILES_ICON: &[u8] = include_bytes!("../../../assets/folder.svg");
@@ -106,9 +108,19 @@ fn contents<'a>(
             metrics.extent - metrics.gap
         }
     } else {
-        // Results keep the browsing height, so typing never resizes the panel.
-        let visible_rows = if browsing { count.min(7) } else { 7 };
+        // Results keep the browsing height, with room for one section heading,
+        // so typing never resizes the panel or moves its footer.
+        let visible_rows = if browsing {
+            count.min(LAUNCHER_ROWS)
+        } else {
+            LAUNCHER_ROWS
+        };
         metrics.extent * visible_rows as f32 - metrics.gap
+            + if visible_rows == LAUNCHER_ROWS {
+                crate::app::launcher::SECTION_HEADING_HEIGHT
+            } else {
+                0.0
+            }
     };
     let compact = model.adaptive && bounds.height >= chrome + preferred_body;
     let mut controls = column![
@@ -155,7 +167,7 @@ fn contents<'a>(
             .spacing(6),
         );
     } else if browsing && count > 0 {
-        let mut header = row![
+        let header = row![
             semantic(
                 Node::heading(browse_heading(model), 2).key("launcher-heading"),
                 theme::strong_text(browse_heading(model)).size(theme::body_size() + 1.0),
@@ -165,26 +177,16 @@ fn contents<'a>(
         .height(LAUNCHER_HEADING_HEIGHT)
         .align_y(iced::Alignment::Center)
         .spacing(4);
-        // Calculations need no prefix: typing one shows its result first.
-        if wide {
-            header = header
-                .push(muted_label(fl!("shell-launcher-calculate-try")))
-                .push(keycap("12 × 3"))
-                .push(muted_label(fl!("shell-launcher-calculate-or")))
-                .push(keycap("5 km to mi"));
-        }
         controls = controls.push(header);
     } else if count > 0 && !visible_query(model).trim().is_empty() {
         // Searching keeps a heading row, so the panel does not jump as you type.
         controls = controls.push(
             row![
                 semantic(
-                    Node::heading(fl!("shell-launcher-results"), 2).key("launcher-heading"),
-                    theme::strong_text(fl!("shell-launcher-results"))
-                        .size(theme::body_size() + 1.0),
+                    Node::heading(results_heading(model), 2).key("launcher-heading"),
+                    theme::strong_text(results_heading(model)).size(theme::body_size() + 1.0),
                 ),
                 Space::new().width(Length::Fill),
-                muted_label(fl!("shell-launcher-match-count", count = count)),
             ]
             .height(LAUNCHER_HEADING_HEIGHT)
             .align_y(iced::Alignment::Center)
@@ -215,16 +217,16 @@ fn contents<'a>(
         {
             calculator_result(model, target, preferred_body)
         } else {
+            // A steady height: the footer never moves, and a row cut at the
+            // bottom fades out to show that the list scrolls.
             padded_results(model, session, Length::Fixed(preferred_body))
         }
     } else {
         let model = Rc::clone(model);
         responsive(move |space| {
-            let metrics = model.menu_metrics;
             let available = (space.height - 8.0).max(0.0);
-            let rows = ((available + metrics.gap) / metrics.extent).floor();
-            let height = if rows >= 1.0 && available.is_finite() {
-                (rows * metrics.extent - metrics.gap).min(available)
+            let height = if available.is_finite() {
+                fitted_height(&model, available).unwrap_or(available.min(preferred_body))
             } else {
                 available.min(preferred_body)
             };
@@ -257,13 +259,19 @@ fn contents<'a>(
         if !model.launcher_status.is_empty() && !ranking_note {
             results = results.push(muted_label(model.launcher_status.clone()));
         }
-        // A single extra command joins the footer beside Actions and Open. More
-        // stay in Actions (Tab) and on their Ctrl+digit keys, so the panel keeps
-        // its height and every command stays beside the result it belongs to.
-        let mut shortcuts = secondary_commands(target);
-        let inline_shortcut = (shortcuts.len() == 1 && width >= 500.0).then(|| shortcuts.remove(0));
+        // The bar holds Actions and the primary command only; other commands
+        // stay in Actions (Tab) and on their Ctrl+digit keys, so one action
+        // leads and the panel keeps its height.
         let mut footer = row![].spacing(7).align_y(iced::Alignment::Center);
-        if width >= 380.0 {
+        // Beside the selected result's Actions the arrows keep a compact hint.
+        let has_actions = target.result.actions.len() >= 2;
+        // Only where the footer has room for every control as well.
+        let commands_width = 180.0 + 110.0;
+        if width >= 380.0 && has_actions && count > 1 {
+            if width >= commands_width + 70.0 {
+                footer = footer.push(keycap("↑")).push(keycap("↓"));
+            }
+        } else if width >= 380.0 {
             if count > 1 {
                 footer = footer
                     .push(keycap("↑"))
@@ -273,10 +281,11 @@ fn contents<'a>(
                 footer = footer.push(muted_label(result_count(model)));
             }
         }
-        footer = footer.push(Space::new().width(Length::Fill));
-        if let Some(shortcut) = inline_shortcut {
-            footer = footer.push(shortcut);
+        // The selected result's other commands, one key away.
+        if let Some(actions) = row_actions(target) {
+            footer = footer.push(actions);
         }
+        footer = footer.push(Space::new().width(Length::Fill));
         footer = footer.push(command_controls(model, target, width));
         let footer = container(footer).padding([5, 8]);
         results = results.push(if calculator {
@@ -316,7 +325,21 @@ fn contents<'a>(
     )
 }
 
+/// The name of the first section, which heads a sectioned list.
+fn first_section(model: &PanelRenderModel<'_>) -> Option<String> {
+    model
+        .menu_entries
+        .first()
+        .and_then(|entry| match &entry.target {
+            PanelMenuEntryTarget::Launcher(target) => target.section.map(|section| section.label()),
+            _ => None,
+        })
+}
+
 fn browse_heading(model: &PanelRenderModel<'_>) -> String {
+    if let Some(section) = first_section(model) {
+        return section;
+    }
     let apps_only = model.menu_entries.iter().all(|entry| {
         matches!(&entry.target, PanelMenuEntryTarget::Launcher(target)
             if target.result.actions.first().is_some_and(|named| matches!(named.action, Action::Application { .. })))
@@ -404,6 +427,26 @@ fn results_node(model: &PanelRenderModel<'_>) -> Node<Message> {
     Node::list(label).key(RESULTS)
 }
 
+fn results_heading(model: &PanelRenderModel<'_>) -> String {
+    first_section(model).unwrap_or_else(|| fl!("shell-launcher-results"))
+}
+
+/// A section heading inside the results list; the column adds `gap` after it.
+pub(super) fn section_heading<'a>(label: String, gap: f32) -> Element<'a, Message> {
+    semantic(
+        Node::heading(label.clone(), 3),
+        container(
+            theme::strong_text(label)
+                .size(theme::body_size() + 1.0)
+                .wrapping(iced::widget::text::Wrapping::None),
+        )
+        .height(crate::app::launcher::SECTION_HEADING_HEIGHT - gap)
+        .width(Length::Fill)
+        .align_y(iced::Alignment::End)
+        .padding(Padding::default().bottom(2.0)),
+    )
+}
+
 fn command_controls(
     model: &PanelRenderModel<'_>,
     target: &Target,
@@ -441,7 +484,9 @@ fn command_controls(
             node,
             theme::action(
                 row![
-                    theme::strong_text(label).size(caption_size()),
+                    theme::strong_text(label)
+                        .size(caption_size())
+                        .wrapping(iced::widget::text::Wrapping::None),
                     primary_keycap(),
                 ]
                 .spacing(7)
@@ -542,6 +587,41 @@ fn padded_results<'a>(
         render_menu_scroll(model, height),
     )])
     .height(height);
+    // More rows below: the list fades out above the footer instead of cutting a
+    // row in half.
+    let metrics = model.menu_metrics;
+    let content_height = model.menu_entries.len() as f32 * metrics.extent - metrics.gap
+        + crate::app::launcher::section_starts(&model.menu_entries).len() as f32
+            * crate::app::launcher::SECTION_HEADING_HEIGHT;
+    let viewport = match height {
+        Length::Fixed(height) => height,
+        _ => model.menu_viewport_height,
+    };
+    let more_below = viewport > 0.0 && model.menu_scroll_y + viewport < content_height - 1.0;
+    let list: Element<'a, Message> = if more_below {
+        // The panel's glass colour, nearly opaque where the list meets the
+        // footer, so a cut row is hidden rather than ghosted.
+        let fade = theme::glass_fill(theme::Glass::Panel);
+        let solid = iced::Color { a: 0.97, ..fade };
+        iced::widget::stack![
+            list,
+            container(
+                container(Space::new().width(Length::Fill).height(14)).style(move |_| {
+                    container::Style::default().background(iced::Gradient::Linear(
+                        iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
+                            .add_stop(0.0, fade.scale_alpha(0.0))
+                            .add_stop(0.6, fade)
+                            .add_stop(1.0, solid),
+                    ))
+                })
+            )
+            .height(height)
+            .align_y(iced::Alignment::End),
+        ]
+        .into()
+    } else {
+        list.into()
+    };
     semantic(
         results_node(model),
         container(list)
@@ -590,7 +670,13 @@ fn search<'a>(
     use canopa_theme::{ColorRole, ColorValue};
     let mut input_ui = theme::ui(canopa_theme::UiKind::Input);
     if input_ui.background == ColorValue::Role(ColorRole::Raised) {
-        input_ui.background = ColorValue::Role(ColorRole::Background);
+        // On glass the field is a soft well of the text colour; opaque
+        // surfaces keep the darker background fill.
+        input_ui.background = if theme::glass_enabled() {
+            ColorValue::Rgba(theme::appearance().palette().text, 16)
+        } else {
+            ColorValue::Role(ColorRole::Background)
+        };
     }
     if !input_ui.custom_border && input_ui.states[4].border_color.is_none() {
         input_ui.states[4].border_color = Some(ColorValue::Rgba(
@@ -604,6 +690,13 @@ fn search<'a>(
         padding.bottom = 14.0;
     }
     let clearable = show_clear && !query.is_empty();
+    // The search counts every match beside the query it answers, not beside
+    // the first section's heading.
+    let count = (clearable && !model.can_go_back && !model.menu_entries.is_empty())
+        .then(|| result_count(model));
+    if let Some(count) = &count {
+        padding.right += theme::text_width(count, caption_size()) + 8.0;
+    }
     if clearable {
         padding.right += theme::text_width(&fl!("shell-launcher-clear"), caption_size()) + 27.0;
         if show_clear_shortcut {
@@ -689,10 +782,15 @@ fn search<'a>(
             key = fl!("shell-key-escape")
         ),
     );
+    let mut trailing = row![].spacing(4).align_y(iced::Alignment::Center);
+    if let Some(count) = count {
+        trailing = trailing.push(muted_label(count).size(caption_size()));
+    }
+    trailing = trailing.push(semantic(clear_node, clear));
     stack![
         input,
         glyph,
-        container(semantic(clear_node, clear))
+        container(trailing)
             .height(Length::Fill)
             .width(Length::Fill)
             .align_x(iced::alignment::Horizontal::Right)
@@ -903,41 +1001,6 @@ fn footer_rule<'a>() -> iced::widget::Rule<'a, iced::Theme> {
     })
 }
 
-fn secondary_commands(target: &Target) -> Vec<Element<'static, Message>> {
-    target
-        .result
-        .actions
-        .iter()
-        .enumerate()
-        .skip(1)
-        .take(4)
-        .filter(|(_, named)| {
-            !matches!(
-                named.action,
-                Action::TogglePin { .. } | Action::EditAlias { .. }
-            )
-        })
-        .map(|(position, named)| {
-            let shortcut = format!("Ctrl+{}", position + 1);
-            let shortcut_label = fl!("shell-key-ctrl-digit", digit = (position + 1).to_string());
-            semantic(
-                Node::button(named.label.clone())
-                    .key(format!("launcher-command-{position}"))
-                    .shortcut(shortcut.clone())
-                    .on_click(Some(Message::Panel(PanelEvent::ActivateLauncher(
-                        target.clone(),
-                        position,
-                    )))),
-                command_button(
-                    &named.label,
-                    shortcut_label,
-                    PanelEvent::ActivateLauncher(target.clone(), position),
-                ),
-            )
-        })
-        .collect()
-}
-
 fn caption_size() -> f32 {
     theme::label_size() + 2.0
 }
@@ -955,7 +1018,8 @@ fn command_button(
     shortcut: impl iced::widget::text::IntoFragment<'static>,
     event: PanelEvent,
 ) -> iced::widget::Button<'static, Message> {
-    let style = canopa_ui::Action::Normal;
+    // Secondary commands are quiet buttons beside the one filled action.
+    let style = canopa_ui::Action::Quiet;
     theme::action(
         command_label(label, shortcut),
         Some(Message::Panel(event)),
@@ -1027,10 +1091,29 @@ fn badge<'a>(
         .into()
 }
 
+/// The tallest list of whole rows, with the section headings among them, that fits
+/// in `available`.
+fn fitted_height(model: &PanelRenderModel<'_>, available: f32) -> Option<f32> {
+    let metrics = model.menu_metrics;
+    let sections = crate::app::launcher::section_starts(&model.menu_entries);
+    let height = |rows: usize| {
+        rows as f32 * metrics.extent - metrics.gap
+            + sections.iter().filter(|start| **start < rows).count() as f32
+                * crate::app::launcher::SECTION_HEADING_HEIGHT
+    };
+    let mut rows = 0;
+    while rows < model.menu_entries.len().max(1) + 64 && height(rows + 1) <= available {
+        rows += 1;
+    }
+    (rows >= 1).then(|| height(rows).min(available))
+}
+
 pub(super) fn scrollbar_gutter(model: &PanelRenderModel<'_>, height: Length) -> f32 {
     if let Length::Fixed(height) = height {
         let metrics = model.menu_metrics;
-        let content_height = model.menu_entries.len() as f32 * metrics.extent - metrics.gap;
+        let content_height = model.menu_entries.len() as f32 * metrics.extent - metrics.gap
+            + crate::app::launcher::section_starts(&model.menu_entries).len() as f32
+                * crate::app::launcher::SECTION_HEADING_HEIGHT;
         if content_height <= height {
             return 0.0;
         }
@@ -1099,9 +1182,7 @@ pub(super) fn result_row<'a>(
         cells.push(selection_indicator(selected));
     }
     cells.push(result_content(model, entry, target));
-    if selected && let Some(actions) = row_actions(target) {
-        cells.push(actions);
-    }
+
     let contents = canopa_ui::direction::row(cells)
         .spacing(7)
         .align_y(iced::Alignment::Center);
@@ -1207,7 +1288,23 @@ fn result_content<'a>(
     };
     let query = query.trim().to_owned();
     let approximate = is_approximate(target);
-    let description = result_description(model, target);
+    // A sectioned list names each kind once, in its heading; rows drop the same
+    // leading word from their second line.
+    let sectioned = target.section.is_some() && !browsing;
+    // Every row of a mixed list reads the same way, selected or not. Browsing
+    // lists names alone, one even line each; searching adds what each match is.
+    let description = (!browsing)
+        .then(|| result_description(model, target))
+        .flatten()
+        .map(|description| match description.split_once(" · ") {
+            Some((kind, rest)) if sectioned && !kind.contains(' ') => rest.to_owned(),
+            _ => description,
+        });
+    // Sections say what each row is (a window to switch to, an app to open);
+    // the command bar says once what Enter does for the selected one. Only a
+    // window listed beside its own application (two rows alike) ends with
+    // what each does: "Switch to window", "New window".
+    let cue = sectioned.then(|| paired_cue(model, target)).flatten();
     cells.push(
         responsive(move |bounds| {
             let font = theme::font();
@@ -1242,21 +1339,13 @@ fn result_content<'a>(
         })
         .into(),
     );
-    // Mixed results carry their section's mark, as on the scope tabs.
-    if !model.can_go_back
-        && !browsing
-        && model.launcher_scope.is_none()
-        && !model.launcher_scopes.is_empty()
-        && let Some(glyph) = section_glyph(target)
-    {
+    if let Some(cue) = cue {
         cells.push(
-            container(theme::icon(
-                glyph,
-                15.0,
-                theme::palette().muted.scale_alpha(0.8),
-            ))
-            .center(20)
-            .into(),
+            theme::text(cue)
+                .size(theme::label_size())
+                .color(theme::palette().muted)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .into(),
         );
     }
     canopa_ui::direction::row(cells)
@@ -1266,25 +1355,35 @@ fn result_content<'a>(
         .into()
 }
 
-/// The scope tab a result belongs to, by what opening it does.
-fn section_glyph(target: &Target) -> Option<&'static [u8]> {
-    // A running app's row switches to its window first; it is still an app.
-    if is_window_result(target) {
-        return Some(WINDOWS_ICON);
-    }
-    match &target.result.actions.first()?.action {
-        Action::Application { .. } | Action::AppActionLaunch { .. } | Action::Launch { .. } => {
-            Some(APPS_ICON)
+/// The application a result belongs to: the app a window row would launch
+/// again, or the app a running application's row opens.
+fn result_application(target: &Target) -> Option<&str> {
+    target
+        .result
+        .actions
+        .iter()
+        .find_map(|named| match &named.action {
+            Action::Application { id } => Some(id.as_str()),
+            _ => None,
+        })
+}
+
+/// What choosing a row does, where the same application is listed both as an
+/// open window and as an app: the row's first action ("Switch to window",
+/// "New window"). Other rows need no label.
+fn paired_cue(model: &PanelRenderModel<'_>, target: &Target) -> Option<String> {
+    let id = result_application(target)?;
+    let window = is_window_result(target);
+    let paired = model.menu_entries.iter().any(|entry| match &entry.target {
+        PanelMenuEntryTarget::Launcher(other) => {
+            is_window_result(other) != window && result_application(other) == Some(id)
         }
-        Action::Open { .. }
-        | Action::Reveal { .. }
-        | Action::Preview { .. }
-        | Action::ChooseApplication { .. }
-        | Action::OpenWith { .. } => Some(FILES_ICON),
-        Action::FocusWindow { .. } => Some(APPS_ICON),
-        Action::Provider { .. } | Action::SettingsPage { .. } => Some(SETTINGS_ICON),
-        _ => None,
-    }
+        _ => false,
+    });
+    paired
+        .then(|| target.result.actions.first())
+        .flatten()
+        .map(|first| first.label.clone())
 }
 
 /// Open-window results, as opposed to the rows of running applications.
@@ -1320,17 +1419,15 @@ fn match_title(
 ) -> Element<'static, Message> {
     use iced::widget::text::Wrapping;
     if query.chars().count() >= 2
-        && let Some(std::ops::Range { start, end }) =
-            crate::app::panel_search::find_folded(&title, query)
+        && let Some(std::ops::Range { start, end }) = highlight_range(&title, query)
     {
         // Text shaping applies one weight per word, so the match is marked by
-        // the accent color on a soft wash, which follow single characters.
+        // the accent color, which follows single characters, and an underline.
         let spans: [iced::widget::text::Span<'static, (), iced::Font>; 3] = [
             iced::widget::span(title[..start].to_owned()),
             iced::widget::span(title[start..end].to_owned())
                 .color(theme::palette().accent)
-                .background(theme::palette().accent.scale_alpha(0.26))
-                .border(iced::Border::default().rounded(3)),
+                .underline(true),
             iced::widget::span(title[end..].to_owned()),
         ];
         return iced::widget::rich_text(spans)
@@ -1347,6 +1444,31 @@ fn match_title(
         .shaping(iced::widget::text::Shaping::Advanced)
         .wrapping(Wrapping::None)
         .into()
+}
+
+/// Where to highlight `query` in `title`: at the start of a word where it
+/// matches one ("te" in "Text Editor"), else where it first matches ("te" in
+/// "Notes"), so every result shows why it is listed.
+fn highlight_range(title: &str, query: &str) -> Option<std::ops::Range<usize>> {
+    word_start_match(title, query).or_else(|| crate::app::panel_search::find_folded(title, query))
+}
+
+/// Where `query` matches the start of a word of `title`.
+fn word_start_match(title: &str, query: &str) -> Option<std::ops::Range<usize>> {
+    let mut previous: Option<char> = None;
+    for (index, character) in title.char_indices() {
+        let starts_word = previous.is_none_or(|before| !before.is_alphanumeric());
+        previous = Some(character);
+        if !starts_word || !character.is_alphanumeric() {
+            continue;
+        }
+        if let Some(found) = crate::app::panel_search::find_folded(&title[index..], query)
+            && found.start == 0
+        {
+            return Some(index..index + found.end);
+        }
+    }
+    None
 }
 
 fn fit_line(text: &str, width: f32, size: f32, font: iced::Font) -> String {
@@ -1413,5 +1535,22 @@ fn result_glyph(name: Option<&str>, target: &Target) -> &'static [u8] {
             APPS_ICON
         }
         _ => SHORTCUT_ICON,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn highlights_mark_the_start_of_a_word() {
+        assert_eq!(super::word_start_match("Text Editor", "te"), Some(0..2));
+        assert_eq!(super::word_start_match("Notes — Weekly plan", "te"), None);
+        assert_eq!(
+            super::highlight_range("Notes — Weekly plan", "te"),
+            Some(2..4)
+        );
+        assert_eq!(
+            super::word_start_match("Notes — Weekly plan", "we"),
+            Some(10..12)
+        );
     }
 }

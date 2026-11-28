@@ -141,7 +141,7 @@ daemon-instance, notification-revision and per-view page checks.
 | `PanelContent` | `title`, `sections`, content-level `actions`, optional `error` |
 | `PanelSection` | `id`, `title`, optional `icon`, `items`, `controls` |
 | `PanelItem` | `id`, `title`, optional `attribution`, `body`, `styled_body`, `rich_body`, `metadata`, `actions`, optional `slider` |
-| `PanelAction` | `key`, `label`, optional `value`, optional `request_activation_token`, `destructive`, `pressed` |
+| `PanelAction` | `key`, `label`, optional `value`, optional `request_activation_token`, `destructive`, `pressed`, `secondary`, `primary`, `symbol` |
 | `PanelControl` | `key`, `label`, current `value`, `options` (value/label pairs) |
 | `PanelSlider` | `key`, `label`, `min`, `max`, `step`, `value` (all `u16`), `unit` |
 | `PanelAttribution` | nonempty `label`, optional `icon` |
@@ -155,7 +155,11 @@ or `item { id }` (an action, a body link, or the slider). A slider commit carrie
 the slider's key and the canonical decimal value (`"40"`, never `"040"`).
 
 Presentation hints are optional and ignored by older hosts: `destructive` marks
-an action that removes something, `pressed` marks a toggle's state, item
+an action that removes something, `pressed` marks a toggle's state, `secondary`
+marks a view or settings action the host may set apart from the others, `primary`
+marks an item's main action the host may fill, `symbol` names a symbolic icon
+(`preferences-system-symbolic`) a host may draw for the action instead of its
+label, which stays the tooltip and accessible name, item
 `attribution` names the source of a card (the Center uses it for the sending
 application), and a section `icon` sits beside its title. The host owns how they
 look; see the provider reference for the current rendering.
@@ -235,7 +239,8 @@ updates rather than restarting it.
 ## Compatibility
 
 - New optional fields serialize only when set: `attribution`, section `icon`,
-  `slider`, `request_activation_token`, `destructive` and `pressed`. Existing
+  `slider`, `request_activation_token`, `destructive`, `pressed`, `secondary`,
+  `primary` and `symbol`. Existing
   content produces the same bytes, and readers that do not know a field ignore it
   (v4 types do not deny unknown fields).
 - Older hosts send token-free events, and providers accept an absent token.

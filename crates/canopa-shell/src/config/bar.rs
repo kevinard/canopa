@@ -83,8 +83,8 @@ pub struct PanelAnimationConfig {
 impl Default for PanelAnimationConfig {
     fn default() -> Self {
         Self {
-            open_ms: 180.0,
-            close_ms: 160.0,
+            open_ms: 240.0,
+            close_ms: 150.0,
         }
     }
 }

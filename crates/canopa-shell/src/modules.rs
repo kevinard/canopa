@@ -1,3 +1,4 @@
+pub mod agenda;
 pub mod battery;
 pub mod button;
 pub mod clock;

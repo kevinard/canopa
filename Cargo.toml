@@ -150,14 +150,14 @@ iced_tiny_skia = { git = "https://github.com/kevinard/iced", rev = "6590c0394120
 iced_wgpu = { git = "https://github.com/kevinard/iced", rev = "6590c03941200731d06f32ed64c71fb63f344f0f" }
 iced_widget = { git = "https://github.com/kevinard/iced", rev = "6590c03941200731d06f32ed64c71fb63f344f0f" }
 iced_winit = { git = "https://github.com/kevinard/iced", rev = "6590c03941200731d06f32ed64c71fb63f344f0f" }
-iced_layershell = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
-iced_layershell_macros = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
-iced_exdevtools = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
-layershellev = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
-waycrate_xkbkeycode = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
+iced_layershell = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "cf808408f51115d24e2fc8acd245689747748380" }
+iced_layershell_macros = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "cf808408f51115d24e2fc8acd245689747748380" }
+iced_exdevtools = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "cf808408f51115d24e2fc8acd245689747748380" }
+layershellev = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "cf808408f51115d24e2fc8acd245689747748380" }
+waycrate_xkbkeycode = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "cf808408f51115d24e2fc8acd245689747748380" }
 reis = { git = "https://github.com/kevinard/reis", rev = "c99f5a7195977bec7e4cc06861b7b3b447c75625" }
 uucore = { git = "https://github.com/kevinard/coreutils", rev = "1e4f136e045306ff99dd7387585f42a336a184b2" }
-niri-ipc = { git = "https://github.com/kevinard/niri", rev = "d3a6f327b79abeb46ac2b04bd01bf2de0a984d78" }
+niri-ipc = { git = "https://github.com/kevinard/niri", rev = "103bff0aba8a86d8de2d5f322769d00beccbd06f" }
 
 # Keep file/line panic backtraces without duplicating full debugger data in
 # every integration-test executable. The test profile inherits these settings.

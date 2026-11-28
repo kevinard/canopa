@@ -6,6 +6,7 @@ mod i18n;
 pub mod accessibility;
 mod customization;
 pub mod direction;
+pub mod glass;
 #[cfg(feature = "icons")]
 pub mod icons;
 pub mod panel;

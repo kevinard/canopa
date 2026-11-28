@@ -29,6 +29,30 @@ pub enum Action {
     Ignore,
 }
 
+/// The form event a rich panel action stands for.
+fn rich_event(event: canopa_panel_protocol::InteractionEvent) -> Option<v1::ProviderEvent> {
+    use canopa_panel_protocol::{InteractionEvent, InteractionTarget};
+    let InteractionEvent::Invoke {
+        target, action_key, ..
+    } = event;
+    let button = |id: &str| v1::ProviderEvent::ButtonActivated {
+        element_id: id.into(),
+    };
+    match (target, action_key.as_str()) {
+        (InteractionTarget::Content, key @ ("radio" | "refresh" | "join-hidden")) => {
+            Some(button(key))
+        }
+        (InteractionTarget::Item { id }, "connect") => {
+            Some(v1::ProviderEvent::SelectableListEntryActivated {
+                element_id: "networks".into(),
+                entry_id: id,
+            })
+        }
+        (InteractionTarget::Item { .. }, key @ ("disconnect" | "forget")) => Some(button(key)),
+        _ => None,
+    }
+}
+
 impl Transport {
     pub fn v5() -> Self {
         Self::V5(Default::default())
@@ -81,7 +105,11 @@ impl Transport {
                         interaction: v5::Interaction::Form(event),
                         ..
                     } => Action::Event(event),
-                    _ => Action::Ignore,
+                    // The rich panel's actions stand for the form's events.
+                    v5::HostMessage::Event {
+                        interaction: v5::Interaction::Rich(event),
+                        ..
+                    } => rich_event(event).map_or(Action::Ignore, Action::Event),
                 }
             }
             _ => Action::Ignore,
@@ -104,11 +132,14 @@ impl Transport {
             } else {
                 v1::ProviderMessage::Content { content }
             })?,
-            Self::V5(state) => state
-                .lock()
-                .unwrap()
-                .replace(v5::Content::Form(content), update)?
-                .encode()?,
+            Self::V5(state) => {
+                // Lists and switches use the rich format; prompts keep their form.
+                let (content, update) = match super::rich_view(&content) {
+                    Some(rich) => (v5::Content::Rich(rich), v5::Update::Replace),
+                    None => (v5::Content::Form(content), update),
+                };
+                state.lock().unwrap().replace(content, update)?.encode()?
+            }
         };
         crate::provider_io::write_frame(writer, &bytes).await
     }

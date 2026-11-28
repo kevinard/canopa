@@ -277,7 +277,9 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
         );
         assert_eq!(bounds("New message").x, bounds("Hello").x);
         assert!(bounds("Mail").y < bounds("New message").y);
-        let unread = bounds("Unread");
+        // On a message card a status is a quiet dot; its label is the
+        // marker's accessible name rather than visible text.
+        assert!(!labels.0.iter().any(|(text, _)| text == "Unread"));
         let key = semantic_key(
             &snapshot,
             "notifications",
@@ -294,8 +296,9 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
             &mut iced::advanced::widget::operation::black_box(&mut measure),
         );
         let marker = measure.bounds[&key];
-        assert!(marker.x > bounds("Mail").x);
-        assert!(marker.contains(unread.center()));
+        // The unread dot leads the source line.
+        assert!(marker.x < bounds("Mail").x);
+        assert!(marker.width <= 16.0 && marker.height <= 16.0, "{marker:?}");
         assert!(marker.y < bounds("Hello").y && viewport.contains(marker.center()));
         let reply = bounds("Reply");
         let dismiss = bounds("Dismiss");
@@ -527,7 +530,7 @@ async fn long_keyboard_selection_leaves_panel_content_visible() {
         crate::theme::ui(canopa_theme::UiKind::Panel),
     );
     let mut tree = Tree::new(view.as_widget());
-    let viewport = Rectangle::with_size(Size::new(360.0, 180.0));
+    let viewport = Rectangle::with_size(Size::new(360.0, 220.0));
     let node = view.as_widget_mut().layout(
         &mut tree,
         &renderer,
@@ -563,7 +566,7 @@ async fn keyboard_reading_scrolls_content_without_changing_or_invoking_selection
     let mut snapshot = long_title_snapshot().await;
     snapshot.move_focus(false);
     let selected = snapshot.focused_action_id().unwrap().to_owned();
-    let viewport = Rectangle::with_size(Size::new(360.0, 180.0));
+    let viewport = Rectangle::with_size(Size::new(360.0, 220.0));
     let mut view = render(
         &snapshot,
         "notifications",
@@ -657,6 +660,9 @@ async fn canopa_body_links_support_selection_clicks_and_replacement_guards() {
             request_activation_token: false,
             destructive: false,
             pressed: None,
+            secondary: false,
+            primary: false,
+            symbol: None,
             key: "opaque-link".into(),
             label: "Read the page".into(),
             value: Some("old-revision".into()),
