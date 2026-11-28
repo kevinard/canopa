@@ -175,6 +175,20 @@ When NetworkManager needs a secret it does not store ("ask each time", a rejecte
 password, a VPN password), the question appears at the top of the page while Settings
 is open. Settings passes the answer on and keeps nothing.
 
+Without NetworkManager, the page uses iwd and systemd-networkd, the same pair the
+Wi-Fi panel uses:
+
+- **Wi-Fi**: each device's switch, nearby networks with security and signal, Connect
+  and Disconnect, a password for a new personal network, and **Join a hidden
+  network…**. iwd remembers every network it joins. Enterprise (802.1X) networks
+  connect once iwd has a provisioning file for them in `/var/lib/iwd`; the page says
+  so instead of offering a form.
+- **Saved networks**: every network iwd keeps, in range or not, with **Connect
+  automatically** and **Forget**.
+- **Wired**: each Ethernet link's state, addresses, gateway and DNS servers, read
+  from networkd. They are set in networkd's `.network` files.
+- **VPN**, **Hotspot** and **Connection settings** say they need NetworkManager.
+
 ## Bluetooth
 
 Each adapter has its switch and **Visible to nearby devices**. While the page is

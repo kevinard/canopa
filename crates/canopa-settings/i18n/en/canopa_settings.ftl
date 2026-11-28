@@ -492,7 +492,9 @@ settings-clock-updated = Clock format updated.
 ## Network
 
 settings-cancel = Cancel
-settings-network-not-running = NetworkManager is not running.
+settings-network-not-running = No network service is running.
+# The live page's service name, as in "Connecting to NetworkManager or iwd…".
+settings-network-service = NetworkManager or iwd
 settings-network-error-changed = The connection changed. Try again.
 settings-network-error-timed-out = NetworkManager did not answer in time.
 settings-network-needs-password = This network needs a password.
@@ -548,6 +550,18 @@ settings-network-question-hint = Settings passes this to NetworkManager and does
 settings-network-no-wifi = No Wi-Fi device.
 settings-network-wifi-hardware-off = A hardware switch or airplane-mode key turned Wi-Fi off.
 settings-network-none-found = No networks found yet.
+settings-network-iwd-not-running = iwd is not running.
+settings-network-networkd-not-running = systemd-networkd is not running.
+settings-network-needs-manager = Needs NetworkManager.
+settings-network-needs-provisioning = Needs a provisioning file in /var/lib/iwd
+settings-network-saved = Saved networks
+settings-network-no-saved = No saved networks.
+# A saved network that is not nearby. $security is settings-network-ap-*.
+settings-network-not-in-range = { $security } · not in range
+settings-network-forget-network = Forget
+settings-network-connected = Connected
+settings-network-address = Address
+settings-network-wired-networkd-hint = Addresses and DNS are set in /etc/systemd/network.
 # A network's security, shown in its description.
 settings-network-ap-open = open
 settings-network-ap-secured = secured

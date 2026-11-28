@@ -132,7 +132,7 @@ Live pages and their clients:
 
 | Page | Client | Service |
 | --- | --- | --- |
-| Network | `canopa_services::network` (+ `secret_agent`) | NetworkManager |
+| Network | `canopa_services::network::{manager, secret_agent}`, or `network::{iwd, networkd}` | NetworkManager, or iwd and systemd-networkd |
 | Bluetooth | `canopa_services::bluetooth` (per-attempt pairing agent) | BlueZ |
 | Printers | `canopa_services::cups_pk_helper`; `lpoptions`, `lpadmin`, `ippfind` | CUPS, cups-pk-helper, Avahi |
 | Sound | `canopa_services::audio` (libpulse) | PipeWire's PulseAudio server |
@@ -340,9 +340,15 @@ Two network stacks are common, and each owns different state:
 | DNS | resolved (configured by NetworkManager) | resolved |
 | VPN and connection profiles | NetworkManager | not covered |
 
-The Settings Network page speaks only NetworkManager (`canopa-services::network`);
-the Shell's Wi-Fi provider supports both. A Network page for networkd + iwd is
-tracked in [issue #38](https://github.com/kevinard/canopa/issues/38).
+The Settings Network page, like the Shell's Wi-Fi provider, follows
+`canopa_services::network::bundle`: a NetworkManager owner gets the full page
+(`manager`, `secret_agent`); otherwise iwd supplies Wi-Fi and saved networks
+(`network::iwd`) and networkd the wired links (`network::networkd`, from its
+`Describe` reply, whose DNS servers are those networkd hands to resolved). The page
+switches when these daemons come or go. On iwd, wired settings stay read-only, the
+sections iwd and networkd do not cover (VPN, hotspot, per-connection IP and proxy)
+say they need NetworkManager, and enterprise Wi-Fi needs an iwd provisioning file;
+writing those files from Settings would need a privileged helper.
 
 ## Known limitations
 

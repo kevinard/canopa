@@ -97,8 +97,8 @@ privilege is needed beyond write access.
 
 ## Trying the working tree
 
-`bash scripts/try-nested-session.sh` builds the Shell, Notify and the wallpaper
-daemon in release mode, then opens a nested Niri window running them with a
+`bash scripts/try-nested-session.sh` builds the Shell, Notify, Settings and the
+wallpaper daemon in release mode, then opens a nested Niri window running them with a
 `foot` terminal, to try changes by hand. `--no-build` skips the build. The
 session is isolated from the one you are logged into: its own D-Bus session bus,
 runtime directory, configuration (the built-in defaults, not your

@@ -94,6 +94,7 @@ pub mod bluez;
 pub mod cups_pk_helper;
 pub mod geoclue;
 pub mod hostname;
+pub mod iwd;
 pub mod locale;
 pub mod logind;
 pub mod mpris;

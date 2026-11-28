@@ -17,6 +17,7 @@ canopa-i18n.workspace = true
 futures-util.workspace = true
 libpulse-binding = { workspace = true, optional = true }
 serde.workspace = true
+serde_json.workspace = true
 tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true

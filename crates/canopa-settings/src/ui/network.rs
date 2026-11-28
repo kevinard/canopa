@@ -2,11 +2,14 @@
 //! WPA-Enterprise, hidden networks), wired status, VPNs (connect, WireGuard,
 //! import), a hotspot, and each saved connection's settings (auto-connect,
 //! metered, IPv4/IPv6 and DNS, proxy). NetworkManager's questions for
-//! secrets appear at the top. Changes apply at once.
+//! secrets appear at the top. Changes apply at once. Without NetworkManager,
+//! [`iwd`] draws the same sections from iwd and systemd-networkd.
+mod iwd;
+
 use super::{Message, State, focus, live_page::LivePage, pick, settings_group, toggle};
 use crate::{
     live::Event,
-    network::{NetworkAction, NetworkService, NetworkState, choose_file},
+    network::{ManagerState, NetworkAction, NetworkService, NetworkState, choose_file},
 };
 use canopa_services::network::{
     manager::{
@@ -83,8 +86,11 @@ pub(super) enum Edit {
     Answer(String, String),
     Remember(bool),
     Join(Option<AccessPoint>),
+    /// iwd's join form: a network in range, or `None` for a hidden one.
+    JoinIwd(Option<canopa_services::network::iwd::Network>),
     CloseJoin,
     SubmitJoin,
+    SubmitIwdJoin,
     /// A saved connection, by its D-Bus path.
     Select(String),
     ApplyIp(&'static str),
@@ -182,6 +188,8 @@ pub(super) struct NetworkForms {
     remember: bool,
     /// The join form: `Some(None)` for a hidden network.
     join: Option<Option<AccessPoint>>,
+    /// iwd's join form, the same way.
+    iwd_join: Option<Option<canopa_services::network::iwd::Network>>,
     selected: Option<String>,
     wireguard: bool,
     answers: HashMap<String, String>,
@@ -312,7 +320,16 @@ fn connection_label(connection: &Connection) -> String {
 impl State {
     pub(super) fn network_edit(&mut self, change: Edit) -> Task<Message> {
         let forms = &mut self.network_forms;
-        let current = self.network.live.state().cloned();
+        let iwd_state = match self.network.live.state() {
+            Some(NetworkState::Iwd(state)) => Some(state.clone()),
+            _ => None,
+        };
+        let current = self
+            .network
+            .live
+            .state()
+            .and_then(NetworkState::manager)
+            .cloned();
         let wifi_device = current.as_ref().and_then(|state| {
             state
                 .overview
@@ -359,9 +376,41 @@ impl State {
                 );
                 forms.join = Some(ap);
             }
+            Edit::JoinIwd(network) => {
+                forms.clear_secrets();
+                forms.set(Field::Ssid, "");
+                forms.iwd_join = Some(network);
+            }
             Edit::CloseJoin => {
                 forms.join = None;
+                forms.iwd_join = None;
                 forms.clear_secrets();
+            }
+            Edit::SubmitIwdJoin => {
+                let Some(join) = forms.iwd_join.take() else {
+                    return Task::none();
+                };
+                let passphrase =
+                    Some(forms.get(Field::Password).to_owned()).filter(|secret| !secret.is_empty());
+                let name = forms.get(Field::Ssid).trim().to_owned();
+                forms.clear_secrets();
+                let action = match join {
+                    Some(network) => crate::network::IwdAction::Connect(network, passphrase),
+                    None => {
+                        let Some(device) = iwd_state
+                            .and_then(|state| state.wifi)
+                            .and_then(|wifi| wifi.devices.into_iter().find(|d| d.state.is_some()))
+                        else {
+                            return Task::none();
+                        };
+                        crate::network::IwdAction::JoinHidden {
+                            device,
+                            name,
+                            passphrase,
+                        }
+                    }
+                };
+                return send(NetworkAction::Iwd(action));
             }
             Edit::SubmitJoin => {
                 let (Some(join), Some(device)) = (forms.join.clone(), wifi_device) else {
@@ -569,11 +618,11 @@ impl State {
 
     fn selected_target(&self) -> Option<Target> {
         let path = self.network_forms.selected.as_ref()?;
-        let state = self.network.live.state()?;
+        let state = self.network.live.state()?.manager()?;
         state.overview.connection(path).map(Target::from)
     }
 
-    fn question_section<'a>(&'a self, state: &'a NetworkState) -> Option<Element<'a, Message>> {
+    fn question_section<'a>(&'a self, state: &'a ManagerState) -> Option<Element<'a, Message>> {
         let question = state.question.as_ref()?;
         let forms = &self.network_forms;
         let mut body = column![text(if question.retry {
@@ -766,7 +815,7 @@ impl State {
         )
     }
 
-    fn wifi_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
+    fn wifi_section<'a>(&'a self, state: &'a ManagerState) -> Element<'a, Message> {
         let page = &self.network;
         let overview = &state.overview;
         if !overview
@@ -858,7 +907,7 @@ impl State {
         settings_group("Wi-Fi", super::kit::rows(body))
     }
 
-    fn wired_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
+    fn wired_section<'a>(&'a self, state: &'a ManagerState) -> Element<'a, Message> {
         let mut body: Vec<Element<'_, Message>> = Vec::new();
         let mut any = false;
         for device in state
@@ -899,7 +948,7 @@ impl State {
         settings_group(fl!("settings-network-wired"), super::kit::rows(body))
     }
 
-    fn vpn_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
+    fn vpn_section<'a>(&'a self, state: &'a ManagerState) -> Element<'a, Message> {
         let page = &self.network;
         let forms = &self.network_forms;
         let mut body = column![].spacing(10);
@@ -1068,7 +1117,7 @@ impl State {
         settings_group("VPN", body)
     }
 
-    fn hotspot_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
+    fn hotspot_section<'a>(&'a self, state: &'a ManagerState) -> Element<'a, Message> {
         let forms = &self.network_forms;
         let active = state.overview.connections.iter().find(|connection| {
             matches!(connection.kind, ConnectionKind::Wifi { hotspot: true, .. })
@@ -1125,7 +1174,7 @@ impl State {
         settings_group(fl!("settings-network-hotspot"), body)
     }
 
-    fn connection_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
+    fn connection_section<'a>(&'a self, state: &'a ManagerState) -> Element<'a, Message> {
         let page = &self.network;
         let forms = &self.network_forms;
         let connections: Vec<(String, String)> = state
@@ -1302,6 +1351,10 @@ impl State {
 
     pub(super) fn network_view(&self) -> Element<'_, Message> {
         self.network.view(message, |state| {
+            let state = match state {
+                NetworkState::Manager(state) => state,
+                NetworkState::Iwd(state) => return self.iwd_view(state),
+            };
             let mut body = column![].spacing(28);
             if let Some(question) = self.question_section(state) {
                 body = body.push(question);
